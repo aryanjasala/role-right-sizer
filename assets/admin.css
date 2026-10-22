@@ -1,0 +1,169 @@
+/* Users > Right-Sizer */
+
+.rrs-page .rrs-intro {
+	max-width: 760px;
+	font-size: 14px;
+	color: #3c434a;
+}
+
+.rrs-muted {
+	color: #646970;
+}
+
+.rrs-panel {
+	max-width: 960px;
+	margin: 20px 0;
+	padding: 4px 24px 16px;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+}
+
+.rrs-empty h2 {
+	margin-top: 16px;
+}
+
+.rrs-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin: 16px 0 8px;
+}
+
+.rrs-toolbar .rrs-built {
+	flex: 1 1 320px;
+	margin: 0;
+	color: #50575e;
+}
+
+.rrs-inline-form {
+	display: inline-block;
+	margin: 0;
+}
+
+.rrs-section {
+	margin: 24px 0 8px;
+}
+
+.rrs-section h2 {
+	margin-bottom: 2px;
+}
+
+.rrs-section h2 .count {
+	color: #646970;
+	font-weight: 400;
+}
+
+.rrs-section > .rrs-muted {
+	margin-top: 0;
+}
+
+.rrs-table .column-primary strong {
+	display: block;
+}
+
+.rrs-table .rrs-note {
+	display: block;
+	margin-top: 4px;
+	color: #996800;
+}
+
+.rrs-proposed strong {
+	color: #066a6e;
+}
+
+.rrs-caps summary {
+	cursor: pointer;
+	color: #2271b1;
+}
+
+.rrs-caps ul {
+	margin: 6px 0 0;
+}
+
+.rrs-caps li {
+	margin: 0 0 2px;
+}
+
+.rrs-caps code,
+.rrs-lost code {
+	font-size: 12px;
+}
+
+.rrs-learning h2 {
+	margin-top: 16px;
+}
+
+.rrs-progress {
+	height: 10px;
+	max-width: 480px;
+	margin: 12px 0;
+	overflow: hidden;
+	background: #f0f0f1;
+	border-radius: 5px;
+}
+
+.rrs-progress span {
+	display: block;
+	height: 100%;
+	background: #0d8b8b;
+	border-radius: 5px;
+}
+
+.rrs-confirm-list {
+	margin: 12px 0;
+}
+
+.rrs-confirm-list li {
+	margin: 0 0 12px;
+	padding: 10px 12px;
+	background: #f6f7f7;
+	border-left: 4px solid #0d8b8b;
+}
+
+.rrs-confirm-list li.is-refused {
+	border-left-color: #8c8f94;
+	opacity: 0.8;
+}
+
+.rrs-confirm-list .rrs-change {
+	margin-left: 6px;
+}
+
+.rrs-lost {
+	margin-top: 6px;
+	line-height: 2;
+}
+
+.rrs-problem {
+	margin: 4px 0 0;
+	color: #b32d2e;
+}
+
+.rrs-changes .rrs-change {
+	display: block;
+}
+
+.rrs-undo .button-link {
+	display: block;
+	margin-top: 6px;
+}
+
+.rrs-notice .rrs-inline-form {
+	margin-left: 8px;
+}
+
+.rrs-role-option {
+	display: inline-block;
+	min-width: 180px;
+	margin: 0 12px 6px 0;
+}
+
+.rrs-facts {
+	margin: 0;
+}
+
+.rrs-sites {
+	margin: 0;
+}
