@@ -1,0 +1,34 @@
+{
+	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
+	"meta": {
+		"title": "Role Right-Sizer demo",
+		"author": "aryanjasala"
+	},
+	"landingPage": "/wp-admin/users.php?page=role-right-sizer",
+	"preferredVersions": {
+		"php": "8.3",
+		"wp": "latest"
+	},
+	"features": {
+		"networking": true
+	},
+	"login": true,
+	"steps": [
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "git:directory",
+				"url": "https://github.com/aryanjasala/role-right-sizer",
+				"ref": "main"
+			},
+			"options": {
+				"activate": true,
+				"targetFolderName": "role-right-sizer"
+			}
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require_once '/wordpress/wp-load.php'; update_option( 'role_right_sizer_tracking_started', time() - 120 * DAY_IN_SECONDS ); add_role( 'shop_editor', 'Shop Editor', array( 'read' => true, 'edit_posts' => true, 'upload_files' => true, 'view_shop_reports' => true ) ); $people = array( 'pat' => array( 'Pat Lee', 'administrator' ), 'olive' => array( 'Olive Grant', 'editor' ), 'gus' => array( 'Gus Moreno', 'author' ), 'casey' => array( 'Casey Wu', 'shop_editor' ) ); $ids = array( 'admin' => 1 ); foreach ( $people as $login => $person ) { $ids[ $login ] = wp_insert_user( array( 'user_login' => $login, 'user_pass' => wp_generate_password(), 'user_email' => $login . '@example.com', 'display_name' => $person[0], 'role' => $person[1], 'user_registered' => gmdate( 'Y-m-d H:i:s', time() - 400 * DAY_IN_SECONDS ) ) ); } $usage = array( 'admin' => array( 'read' => 0, 'manage_options' => 1, 'activate_plugins' => 6, 'promote_users' => 0, 'list_users' => 2 ), 'pat' => array( 'read' => 0, 'edit_posts' => 0, 'publish_posts' => 1, 'edit_published_posts' => 1, 'edit_others_posts' => 2, 'manage_categories' => 9, 'moderate_comments' => 4, 'upload_files' => 1 ), 'casey' => array( 'read' => 1, 'edit_posts' => 1, 'upload_files' => 3 ) ); foreach ( $usage as $login => $caps ) { $record = array(); foreach ( $caps as $cap => $days ) { $last = time() - $days * DAY_IN_SECONDS; $record[ $cap ] = array( $last - 40 * DAY_IN_SECONDS, $last, 12 ); } update_user_option( $ids[ $login ], 'role_right_sizer_usage', $record ); } foreach ( array( 'admin' => 0, 'pat' => 0, 'casey' => 1, 'olive' => 121 ) as $login => $days ) { update_user_option( $ids[ $login ], 'role_right_sizer_last_active', time() - $days * DAY_IN_SECONDS ); }"
+		}
+	]
+}
