@@ -1,5 +1,4 @@
-const { test, expect, wp, wpEval } = require( './utils' );
-const { BASE_URL } = require( './utils/config' );
+const { test, expect, wp, wpEval, logInAs } = require( './utils' );
 
 const SCREEN = '/wp-admin/users.php?page=role-right-sizer';
 const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history' ];
@@ -83,12 +82,8 @@ const reset = () => {
  * @return {Promise<{context: import('@playwright/test').BrowserContext, page: import('@playwright/test').Page, rest: Function}>}
  */
 async function loginAs( browser, login ) {
-	const context = await browser.newContext( { baseURL: BASE_URL, storageState: { cookies: [], origins: [] } } );
-	const page = await context.newPage();
-	await page.goto( '/wp-login.php' );
-	await page.locator( '#user_login' ).fill( login );
-	await page.locator( '#user_pass' ).fill( 'password' );
-	await Promise.all( [ page.waitForURL( /wp-admin/ ), page.locator( '#wp-submit' ).click() ] );
+	const { context, page } = await logInAs( browser, login, 'password' );
+	await page.waitForURL( /wp-admin/ );
 	const nonce = ( await ( await page.request.get( '/wp-admin/admin-ajax.php?action=rest-nonce' ) ).text() ).trim();
 	const rest = async ( method, route, data ) => {
 		const response = await page.request.fetch( `/index.php?rest_route=${ encodeURIComponent( route ) }`, { method, headers: { 'X-WP-Nonce': nonce }, data } );
