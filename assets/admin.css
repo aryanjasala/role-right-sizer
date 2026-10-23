@@ -167,3 +167,55 @@
 .rrs-sites {
 	margin: 0;
 }
+
+/* Which accounts the report leaves out, under the toolbar. */
+.rrs-skipped {
+	max-width: 760px;
+	margin: 0 0 8px;
+}
+
+/* Unused capabilities, one row per role and owner. */
+.rrs-owner {
+	display: block;
+	margin-top: 4px;
+	color: #50575e;
+}
+
+.rrs-group--active-owner .rrs-owner {
+	color: #996800;
+}
+
+.rrs-group-caps li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 8px;
+}
+
+.rrs-group-caps input[type="checkbox"] {
+	margin: 0;
+}
+
+.rrs-confirm-list .rrs-owner {
+	color: #996800;
+}
+
+/* The review button stays in view while the tables scroll. */
+.rrs-review-bar {
+	position: sticky;
+	bottom: 0;
+	z-index: 10;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	margin: 16px 0 0;
+	padding: 10px 12px;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.rrs-form.has-selection .rrs-review-bar {
+	border-color: #2271b1;
+}

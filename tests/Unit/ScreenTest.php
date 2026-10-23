@@ -141,4 +141,93 @@ final class ScreenTest extends PluginTestCase {
 
 		$this->assertArrayHasKey( 'role_right_sizer', $health->add_test( array( 'direct' => array() ) )['direct'] );
 	}
+
+	/**
+	 * Site Health with URL and number functions stubbed.
+	 *
+	 * @return SiteHealth
+	 */
+	private function health(): SiteHealth {
+		Functions\when( 'number_format_i18n' )->alias( 'strval' );
+		Functions\when( 'admin_url' )->alias(
+			static function ( $path ) {
+				return 'https://example.com/wp-admin/' . $path;
+			}
+		);
+		Functions\when( 'add_query_arg' )->alias(
+			static function ( $args, $url ) {
+				return $url . '?' . http_build_query( $args );
+			}
+		);
+		$this->tracking_started( 60 );
+		$settings = new Settings();
+		$store    = new Store();
+
+		return new SiteHealth( $settings, new Report( $settings, new Recommender( $settings, $store ), $store ) );
+	}
+
+	public function test_site_health_does_not_call_unused_role_capabilities_a_security_issue(): void {
+		$health = $this->health();
+		$this->options[ Report::OPTION ] = array(
+			'status' => 'done',
+			'built'  => time(),
+			'roles'  => array(
+				array( 'role' => 'shop_editor', 'cap' => 'old_cap', 'users' => 1, 'owner' => null ),
+				array( 'role' => 'shop_editor', 'cap' => 'manage_woocommerce', 'users' => 1, 'owner' => array( 'type' => 'plugin', 'id' => 'woocommerce/woocommerce.php', 'name' => 'WooCommerce', 'active' => true ) ),
+			),
+		);
+
+		$result = $health->run();
+
+		$this->assertSame( 'good', $result['status'] );
+		$this->assertSame( 'Every account uses the access its role gives it', $result['label'] );
+		// Only the leftover counts; the active plugin's capability is not mentioned at all.
+		$this->assertStringContainsString( '1 capability on a role was never used', $result['description'] );
+		$this->assertStringContainsString( 'housekeeping, not a risk', $result['description'] );
+		$this->assertStringContainsString( 'page=role-right-sizer', $result['actions'] );
+
+		// Only an active plugin's capabilities: nothing to say.
+		array_shift( $this->options[ Report::OPTION ]['roles'] );
+		$this->assertStringNotContainsString( 'never used', $health->run()['description'] );
+		$this->assertSame( '', $health->run()['actions'] );
+	}
+
+	public function test_the_site_health_result_takes_a_filter_with_a_fallback(): void {
+		$health = $this->health();
+
+		Filters\expectApplied( 'role_right_sizer_site_health_result' )->once()->andReturnUsing(
+			static function ( array $result ) {
+				$result['label'] = 'Custom';
+				return $result;
+			}
+		);
+		$this->assertSame( 'Custom', $health->run()['label'] );
+
+		Filters\expectApplied( 'role_right_sizer_site_health_result' )->once()->andReturn( array( 'status' => 'nonsense' ) );
+		$this->assertSame( 'good', $health->run()['status'] );
+	}
+
+	public function test_unused_capabilities_are_grouped_by_role_and_owner(): void {
+		$woo    = array( 'type' => 'plugin', 'id' => 'woocommerce/woocommerce.php', 'name' => 'WooCommerce', 'active' => true );
+		$groups = Screen::group_role_caps(
+			array(
+				array( 'role' => 'shop_manager', 'cap' => 'manage_woocommerce', 'users' => 2, 'owner' => $woo ),
+				array( 'role' => 'shop_manager', 'cap' => 'view_woocommerce_reports', 'users' => 2, 'owner' => $woo ),
+				array( 'role' => 'shop_manager', 'cap' => 'old_cap', 'users' => 2, 'owner' => null ),
+				array( 'role' => 'editor', 'cap' => 'wpseo_bulk_edit', 'users' => 5, 'owner' => null ),
+			)
+		);
+
+		$this->assertSame( array( 'editor|', 'shop_manager|', 'shop_manager|plugin:woocommerce/woocommerce.php' ), array_keys( $groups ) );
+		$this->assertSame( array( 'manage_woocommerce', 'view_woocommerce_reports' ), $groups['shop_manager|plugin:woocommerce/woocommerce.php']['caps'] );
+		$this->assertSame( 2, $groups['shop_manager|']['users'] );
+		$this->assertSame( $woo, $groups['shop_manager|plugin:woocommerce/woocommerce.php']['owner'] );
+	}
+
+	public function test_owner_labels_say_whether_the_owner_is_active(): void {
+		$this->assertSame( '', Screen::owner_label( null ) );
+		$this->assertSame( 'Belongs to WooCommerce, which is active.', Screen::owner_label( array( 'type' => 'plugin', 'id' => 'w', 'name' => 'WooCommerce', 'active' => true ) ) );
+		$this->assertSame( 'Added by old-shop, which is not active.', Screen::owner_label( array( 'type' => 'plugin', 'id' => 'old-shop', 'name' => 'old-shop', 'active' => false ) ) );
+		$this->assertSame( 'Checked by Products, which is registered on this site.', Screen::owner_label( array( 'type' => 'post_type', 'id' => 'product', 'name' => 'Products', 'active' => true ) ) );
+	}
 }

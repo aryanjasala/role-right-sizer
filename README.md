@@ -34,9 +34,9 @@ Sites collect administrators who only ever write posts, old agency accounts nobo
 - **Usage recording** from the events WordPress already fires, admin screen visits, REST requests that change something, and ability runs. Written once per request, at most once an hour per capability
 - **Smaller role**: the smallest existing role that covers everything a person used, with the capabilities they would lose and when they last used each one
 - **Dormant accounts** (no activity for 90 days) and **never logged in since tracking began**, with no role or a fallback role
-- **Unused capabilities on roles**: plugin and custom capabilities no user of the role used
+- **Unused capabilities on roles**: plugin and custom capabilities no user of the role used, grouped by role and by the plugin they belong to. Never on the Administrator role, and only once a capability has been on its role for the whole window
 - **Confirmation** that lists every capability a change takes away, and a **change log** with Undo for one change or a whole batch
-- **Safe by default**: a 30-day learning period, never more access than now, the last administrator and your own account are never changed, exclude lists for people and roles
+- **Safe by default**: a 30-day learning period, never more access than now, the last administrator and your own account are never changed, administrator capabilities are never suggested for removal, an active plugin's capabilities are marked and left out of `apply --all`, exclude lists for people and roles
 - **CSV download**, **WP-CLI**, **abilities** for AI agents, a **Site Health** check, and filters and actions for every default and change
 
 ## Install
@@ -69,7 +69,7 @@ Recommendations change roles through core's own `set_role()`, so other plugins s
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-1.png" alt="Users > Right-Sizer: a smaller role, dormant accounts and unused capabilities on roles"><br><sub>Users > Right-Sizer: a smaller role, dormant accounts and unused capabilities on roles</sub></td>
+    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-1.png" alt="Users > Right-Sizer: a smaller role, dormant accounts and unused capabilities on roles, grouped by role"><br><sub>Users > Right-Sizer: a smaller role, dormant accounts and unused capabilities on roles, grouped by role</sub></td>
     <td width="50%" valign="top"><img src=".wordpress-org/screenshot-2.png" alt="The confirmation step lists every capability each change takes away"><br><sub>The confirmation step lists every capability each change takes away</sub></td>
   </tr>
   <tr>
@@ -130,6 +130,12 @@ Small plugins that each fill one gap in WordPress, all free with no pro version:
 | <img src="https://raw.githubusercontent.com/aryanjasala/category-tag-trash/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Category & Tag Trash](https://github.com/aryanjasala/category-tag-trash) | A trash for categories, tags and custom terms, with undo and full restore |
 | <img src="https://raw.githubusercontent.com/aryanjasala/site-read-only-mode/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Site Read-Only Mode](https://github.com/aryanjasala/site-read-only-mode) | Read-only mode for WordPress during migrations and deploys |
 | <img src="https://raw.githubusercontent.com/aryanjasala/restore-blocks-from-revisions/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Restore Blocks from Revisions](https://github.com/aryanjasala/restore-blocks-from-revisions) | Restore a single block from an old revision, not the whole post |
+| <img src="https://raw.githubusercontent.com/aryanjasala/activity-log-with-undo/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Activity Log with Undo](https://github.com/aryanjasala/activity-log-with-undo) | An activity log where every change you can reverse has an Undo button |
+| <img src="https://raw.githubusercontent.com/aryanjasala/agent-governance/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Agent Governance](https://github.com/aryanjasala/agent-governance) | Hold risky AI agent calls for approval, preview what they change, and roll back a session |
+| <img src="https://raw.githubusercontent.com/aryanjasala/block-doctor/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Doctor](https://github.com/aryanjasala/block-doctor) | Scan the whole site for invalid and broken blocks and fix them in bulk, with undo |
+| <img src="https://raw.githubusercontent.com/aryanjasala/block-theme-ops/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Theme Ops](https://github.com/aryanjasala/block-theme-ops) | Find Site Editor changes that override your theme files, see the diff, reset them or send them to Git |
+| <img src="https://raw.githubusercontent.com/aryanjasala/update-rehearsal/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Update Rehearsal](https://github.com/aryanjasala/update-rehearsal) | Try plugin, theme, core and PHP updates on a disposable copy of your site in WordPress Playground first |
+| <img src="https://raw.githubusercontent.com/aryanjasala/user-session-manager/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [User Session Manager](https://github.com/aryanjasala/user-session-manager) | See every device signed in, sign out one, and limit sessions per role |
 
 ## License
 

@@ -2,7 +2,9 @@ const { test, expect, wp, wpEval } = require( './utils' );
 const { BASE_URL } = require( './utils/config' );
 
 const SCREEN = '/wp-admin/users.php?page=role-right-sizer';
-const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes' ];
+const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history' ];
+// Capabilities the tests put on core roles, taken off again in reset().
+const TEST_CAPS = [ [ 'administrator', 'rrs_e2e_approve' ] ];
 const LOGINS = [ 'pat', 'sam', 'olive', 'gus', 'casey', 'jo' ];
 
 const json = ( php ) => JSON.parse( wpEval( `echo wp_json_encode( ${ php } );` ) );
@@ -12,6 +14,28 @@ const usage = ( login ) => json( `get_user_option( 'role_right_sizer_usage', ${ 
 
 /** Starts tracking the given number of days ago. */
 const trackingStarted = ( days ) => wpEval( `update_option( 'role_right_sizer_tracking_started', time() - ${ days } * DAY_IN_SECONDS );` );
+
+/**
+ * Says a role has had its capabilities since tracking began, in the capability history.
+ * Without this, a capability the test just added counts as new and is never called unused.
+ *
+ * @param {string}   role Role name.
+ * @param {string[]} keep Capabilities to leave as new.
+ */
+const settle = ( role, keep = [] ) =>
+	wpEval( `
+		$history = get_option( 'role_right_sizer_capability_history', array() );
+		$started = (int) get_option( 'role_right_sizer_tracking_started' );
+		foreach ( array_keys( (array) ( $history['${ role }'] ?? array() ) ) as $cap ) {
+			if ( ! in_array( $cap, json_decode( '${ JSON.stringify( keep ) }', true ), true ) ) {
+				$history['${ role }'][ $cap ][0] = $started;
+			}
+		}
+		update_option( 'role_right_sizer_capability_history', $history, false );
+	` );
+
+/** Report rows from WP-CLI, without the unused capability rows other plugins in a shared lab may add. */
+const userRows = ( report ) => report.filter( ( row ) => row.type !== 'unused_cap' );
 
 /** Makes an account look registered long ago, and optionally last active a while back. */
 const backdate = ( login, { registered = 200, active = 0 } = {} ) => {
@@ -42,6 +66,9 @@ const reset = () => {
 		wp( 'role', 'delete', 'shop_editor' );
 	} catch ( error ) {
 		// No such role.
+	}
+	for ( const [ role, cap ] of TEST_CAPS ) {
+		wpEval( `get_role( '${ role }' )->remove_cap( '${ cap }' );` );
 	}
 	trackingStarted( 0 );
 	// The test admin has used the screen and settings for a while, like a real one would have.
@@ -146,8 +173,22 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( csv ).toMatch( /"pat","Pat","administrator","downgrade","editor","[^"]*manage_options[^"]*"/ );
 		expect( csv ).toMatch( /"sam","Sam","author","",""/ );
 
+		// The review bar counts what is ticked, stays in view, and its label takes a wp.hooks filter.
+		const review = page.locator( '.rrs-review-button' );
+		await expect( review ).toHaveText( 'Review selected changes' );
+		expect( await page.locator( '.rrs-review-bar' ).evaluate( ( bar ) => getComputedStyle( bar ).position ) ).toBe( 'sticky' );
 		await row.locator( 'input[name="users[]"]' ).check();
-		await page.getByRole( 'button', { name: 'Review selected changes' } ).click();
+		await expect( review ).toHaveText( 'Review 1 selected change' );
+		await page.evaluate( () => {
+			window.rrsSelected = [];
+			window.wp.hooks.addAction( 'roleRightSizer.selectionChanged', 'e2e', ( count ) => window.rrsSelected.push( count ) );
+			window.wp.hooks.addFilter( 'roleRightSizer.reviewLabel', 'e2e', ( label, count ) => `${ label } (filtered ${ count })` );
+		} );
+		await row.locator( 'input[name="users[]"]' ).uncheck();
+		await row.locator( 'input[name="users[]"]' ).check();
+		await expect( review ).toHaveText( 'Review 1 selected change (filtered 1)' );
+		expect( await page.evaluate( () => window.rrsSelected ) ).toEqual( [ 0, 1 ] );
+		await review.click();
 		const item = page.locator( '.rrs-confirm-list li' );
 		await expect( item ).toContainText( 'Pat (pat)' );
 		await expect( item ).toContainText( 'Administrator → Editor' );
@@ -195,7 +236,7 @@ test.describe( 'Role Right-Sizer', () => {
 		await expect( page.locator( 'tr[data-user="olive"] .rrs-proposed' ) ).toHaveText( 'Subscriber' );
 		await page.locator( 'tr[data-user="olive"] input[name="users[]"]' ).check();
 		await page.locator( 'tr[data-user="gus"] input[name="users[]"]' ).check();
-		await page.getByRole( 'button', { name: 'Review selected changes' } ).click();
+		await page.getByRole( 'button', { name: 'Review 2 selected changes' } ).click();
 		await page.getByRole( 'button', { name: 'Apply 2 changes' } ).click();
 		await expect( page.locator( '.notice-success' ) ).toContainText( 'Applied 2 changes.' );
 		expect( roles( 'olive' ) ).toBe( 'subscriber' );
@@ -215,13 +256,16 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( ( await casey.rest( 'POST', '/wp/v2/posts', { title: 'New mugs in stock', status: 'draft' } ) ).status ).toBe( 201 );
 		await casey.context.close();
 		trackingStarted( 40 );
+		settle( 'shop_editor' );
 
 		await page.goto( SCREEN );
-		const row = page.locator( '.rrs-section--roles tr[data-role="shop_editor"][data-cap="view_shop_reports"]' );
-		await expect( row ).toContainText( 'Shop Editor' );
-		await expect( page.locator( '.rrs-section--roles tr[data-cap="edit_posts"]' ) ).toHaveCount( 0 );
-		// Row actions only show on hover or focus; focus does not depend on where the mouse is.
-		await row.getByRole( 'link', { name: 'Remove from role' } ).focus();
+		const group = page.locator( '.rrs-section--roles tr.rrs-group[data-role="shop_editor"]' );
+		await expect( group ).toContainText( 'Shop Editor' );
+		await group.locator( 'summary' ).click();
+		const row = group.locator( 'li[data-cap="view_shop_reports"]' );
+		await expect( row ).toBeVisible();
+		await expect( page.locator( '.rrs-section--roles [data-cap="edit_posts"]' ) ).toHaveCount( 0 );
+		await row.getByRole( 'link', { name: 'Remove view_shop_reports from Shop Editor' } ).focus();
 		await Promise.all( [ page.waitForURL( /view=confirm/ ), page.keyboard.press( 'Enter' ) ] );
 		await expect( page.locator( '.rrs-confirm-list li' ) ).toContainText( 'Remove view_shop_reports' );
 		await page.getByRole( 'button', { name: 'Apply 1 change' } ).click();
@@ -241,8 +285,10 @@ test.describe( 'Role Right-Sizer', () => {
 		backdate( 'jo', { active: 120 } );
 		// The admin looks dormant too, so both administrators get a recommendation.
 		wpEval( "update_user_option( 1, 'role_right_sizer_last_active', time() - 120 * DAY_IN_SECONDS ); delete_user_meta( 1, 'role_right_sizer_last_login' );" );
-		const report = JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) );
-		expect( report.map( ( row ) => row.target ).sort() ).toEqual( [ 'admin', 'jo' ] );
+		const report = userRows( JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) ) );
+		expect( report.map( ( row ) => row.target ) ).toEqual( expect.arrayContaining( [ 'admin', 'jo' ] ) );
+		// Nothing proposed for the administrator role itself, whatever other plugins put on it.
+		expect( JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) ).filter( ( row ) => row.type === 'unused_cap' && row.target === 'administrator' ) ).toEqual( [] );
 
 		await page.goto( SCREEN );
 		const self = page.locator( 'tr[data-user="admin"]' );
@@ -265,7 +311,7 @@ test.describe( 'Role Right-Sizer', () => {
 		wpEval( "update_user_option( 1, 'role_right_sizer_last_active', time() - 120 * DAY_IN_SECONDS );" );
 		expect( () => wp( 'role-right-sizer', 'apply', 'admin' ) ).toThrow( /last administrator/ );
 		expect( roles( 'admin' ) ).toBe( 'administrator' );
-		expect( JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) ).map( ( row ) => row.target ) ).not.toContain( 'admin' );
+		expect( userRows( JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) ) ).map( ( row ) => row.target ) ).not.toContain( 'admin' );
 
 		const [ change ] = JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) );
 		wp( 'role-right-sizer', 'undo', String( change.id ), '--batch' );
@@ -280,7 +326,9 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( dry ).toContain( 'pat: administrator -> editor. Loses:' );
 		expect( roles( 'pat' ) ).toBe( 'administrator' );
 
-		expect( wp( 'role-right-sizer', 'apply', '--all', '--yes' ) ).toContain( 'Applied 1 change(s)' );
+		// Everything the report lists, except capabilities that belong to an active plugin.
+		const expected = JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) ).filter( ( row ) => row.type !== 'unused_cap' || row.owner_active !== 'yes' ).length;
+		expect( wp( 'role-right-sizer', 'apply', '--all', '--yes' ) ).toContain( `Applied ${ expected } change(s)` );
 		expect( roles( 'pat' ) ).toBe( 'editor' );
 		const [ change ] = JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) );
 		expect( change.by ).toBe( 0 );
@@ -291,6 +339,84 @@ test.describe( 'Role Right-Sizer', () => {
 		wp( 'role-right-sizer', 'forget', 'pat' );
 		expect( usage( 'pat' ) ).toEqual( {} );
 		expect( wpEval( `echo get_user_meta( ${ userId( 'pat' ) }, 'role_right_sizer_last_login', true );` ) ).toBe( '' );
+	} );
+
+	test( 'never suggests taking capabilities from administrators, new ones, or an active plugin\'s without asking', async ( { browser, page } ) => {
+		// What QA found: plugin capabilities on Administrator and ones added minutes ago were listed as unused,
+		// and apply --all took them away.
+		wp( 'cap', 'add', 'administrator', 'rrs_e2e_approve' );
+		wp( 'role', 'create', 'shop_editor', 'Shop Editor' );
+		wp( 'cap', 'add', 'shop_editor', 'read', 'edit_posts', 'view_shop_reports', 'export_orders', 'role_right_sizer_reports' );
+		createUser( 'casey', 'shop_editor' );
+		const casey = await loginAs( browser, 'casey' );
+		expect( ( await casey.rest( 'POST', '/wp/v2/posts', { title: 'New mugs in stock', status: 'draft' } ) ).status ).toBe( 201 );
+		await casey.context.close();
+		trackingStarted( 40 );
+		settle( 'administrator' );
+		settle( 'shop_editor' );
+		// A capability a plugin added today.
+		wp( 'cap', 'add', 'shop_editor', 'print_labels' );
+		const history = json( "get_option( 'role_right_sizer_capability_history' )" );
+		expect( history.shop_editor.print_labels[ 0 ] ).toBeGreaterThan( history.shop_editor.view_shop_reports[ 0 ] );
+
+		const caps = JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) ).filter( ( row ) => row.type === 'unused_cap' );
+		expect( caps.filter( ( row ) => row.target === 'administrator' ) ).toEqual( [] );
+		const mine = caps.filter( ( row ) => row.target === 'shop_editor' );
+		expect( mine.map( ( row ) => row.lost ).sort() ).toEqual( [ 'export_orders', 'role_right_sizer_reports', 'view_shop_reports' ] );
+		// Its name says it belongs to an active plugin (this one, for the test).
+		expect( mine.find( ( row ) => row.lost === 'role_right_sizer_reports' ) ).toMatchObject( { owner: 'Role Right-Sizer', owner_active: 'yes' } );
+		expect( mine.find( ( row ) => row.lost === 'view_shop_reports' ) ).toMatchObject( { owner: '', owner_active: '' } );
+
+		// The screen groups them by role and owner, and marks the active plugin's.
+		await page.goto( SCREEN );
+		await expect( page.locator( '.rrs-section--roles' ) ).not.toContainText( 'rrs_e2e_approve' );
+		await expect( page.locator( '.rrs-section--roles' ) ).not.toContainText( 'print_labels' );
+		const plugin = page.locator( 'tr.rrs-group[data-role="shop_editor"][data-owner^="plugin:"]' );
+		await expect( plugin.locator( '.rrs-owner' ) ).toHaveText( 'Belongs to Role Right-Sizer, which is active.' );
+		const leftovers = page.locator( 'tr.rrs-group[data-role="shop_editor"][data-owner=""]' );
+		await expect( leftovers.locator( 'summary' ) ).toHaveText( '2 capabilities' );
+		// One tick selects every capability in the group.
+		await leftovers.locator( 'input[name="groups[]"]' ).check();
+		await expect( page.locator( '.rrs-review-button' ) ).toHaveText( 'Review 2 selected changes' );
+		await page.locator( '.rrs-review-button' ).click();
+		await expect( page.locator( '.rrs-confirm-list li' ) ).toHaveCount( 2 );
+		await expect( page.getByRole( 'button', { name: 'Apply 2 changes' } ) ).toBeVisible();
+
+		// A forged request for the administrator role is refused.
+		await page.goto( `${ SCREEN }&view=confirm&caps[]=administrator|rrs_e2e_approve` );
+		await expect( page.locator( '.rrs-problem' ) ).toContainText( 'never removed from the administrator role' );
+
+		// Site Health: leftover capabilities are housekeeping, not a security recommendation,
+		// and the active plugin's capability is not counted.
+		const health = JSON.parse(
+			wpEval( `
+				$tests = apply_filters( 'site_status_tests', array() );
+				echo wp_json_encode( call_user_func( $tests['direct']['role_right_sizer']['test'] ) );
+			` )
+		);
+		expect( health.status ).toBe( 'good' );
+		expect( health.description ).toContain( '2 capabilities on roles were never used' );
+
+		// apply --all leaves the active plugin's capability alone unless asked.
+		expect( wp( 'role-right-sizer', 'apply', '--all', '--dry-run' ) ).toContain( 'Role shop_editor: left role_right_sizer_reports alone. It belongs to Role Right-Sizer, which is active.' );
+		wp( 'role-right-sizer', 'apply', '--all', '--yes' );
+		const has = ( role, cap ) => wpEval( `echo get_role( '${ role }' )->has_cap( '${ cap }' ) ? 'yes' : 'no';` );
+		expect( has( 'shop_editor', 'view_shop_reports' ) ).toBe( 'no' );
+		expect( has( 'shop_editor', 'role_right_sizer_reports' ) ).toBe( 'yes' );
+		expect( has( 'shop_editor', 'print_labels' ) ).toBe( 'yes' );
+		expect( has( 'administrator', 'rrs_e2e_approve' ) ).toBe( 'yes' );
+		let [ change ] = JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) );
+		wp( 'role-right-sizer', 'undo', String( change.id ), '--batch' );
+		expect( has( 'shop_editor', 'view_shop_reports' ) ).toBe( 'yes' );
+
+		wp( 'role-right-sizer', 'apply', '--all', '--include-plugin-caps', '--yes' );
+		expect( has( 'shop_editor', 'role_right_sizer_reports' ) ).toBe( 'no' );
+		[ change ] = JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) );
+		wp( 'role-right-sizer', 'undo', String( change.id ), '--batch' );
+		expect( has( 'shop_editor', 'role_right_sizer_reports' ) ).toBe( 'yes' );
+
+		// A capability put back with Undo counts as new again, so it is not suggested again for a while.
+		expect( JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) ).filter( ( row ) => row.target === 'shop_editor' ).map( ( row ) => row.lost ) ).toEqual( [] );
 	} );
 
 	test( 'the personal data exporter and eraser cover usage and role changes, and Site Health points to the screen', async ( { browser, page } ) => {

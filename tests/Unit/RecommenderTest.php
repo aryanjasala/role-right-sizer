@@ -218,10 +218,77 @@ final class RecommenderTest extends PluginTestCase {
 					'role'  => 'shop_editor',
 					'cap'   => 'view_shop_reports',
 					'users' => 2,
+					'owner' => null,
 				),
 			),
 			$found
 		);
+	}
+
+	public function test_capabilities_on_the_administrator_role_or_any_role_with_manage_options_are_never_suggested(): void {
+		$this->add_role( 'site_owner', array( 'read', 'manage_options', 'agent_governance_approve' ) );
+		$this->roles['administrator']->add_cap( 'agent_governance_approve' );
+		$this->roles['administrator']->add_cap( 'manage_woocommerce' );
+		$this->assertSame( array( 'administrator', 'site_owner' ), Recommender::protected_roles() );
+
+		$found = Recommender::unused_role_caps(
+			array(),
+			array(
+				'administrator' => 3,
+				'site_owner'    => 1,
+			),
+			Recommender::role_caps(),
+			array_merge( ( new Settings() )->ignored_capabilities(), Recommender::core_capabilities() ),
+			array(),
+			Recommender::protected_roles()
+		);
+		$this->assertSame( array(), $found );
+	}
+
+	public function test_the_protected_roles_take_a_filter(): void {
+		$this->roles['administrator']->add_cap( 'agent_governance_approve' );
+
+		Filters\expectApplied( 'role_right_sizer_protected_roles' )->once()->with( array( 'administrator' ) )->andReturn( array( 'editor', 7, '' ) );
+		$protected = Recommender::protected_roles();
+		$this->assertSame( array( 'editor' ), $protected );
+
+		$found = Recommender::unused_role_caps( array(), array( 'administrator' => 1 ), Recommender::role_caps(), array_merge( ( new Settings() )->ignored_capabilities(), Recommender::core_capabilities() ), array(), $protected );
+		$this->assertSame( array( 'agent_governance_approve' ), array_column( $found, 'cap' ) );
+	}
+
+	public function test_a_capability_only_counts_as_unused_once_it_was_on_the_role_for_the_whole_window(): void {
+		$roles   = array( 'shop_editor' => array( 'read', 'view_shop_reports', 'manage_woocommerce', 'export_orders' ) );
+		$since   = time() - 60 * DAY_IN_SECONDS;
+		$history = array(
+			'shop_editor' => array(
+				// There since tracking began.
+				'view_shop_reports'  => array( $since - 10, '' ),
+				// Added by a plugin a few minutes ago.
+				'manage_woocommerce' => array( time() - 300, 'woocommerce' ),
+			),
+			// export_orders is not in the history at all: too early to tell.
+		);
+
+		$found = Recommender::unused_role_caps( array(), array( 'shop_editor' => 1 ), $roles, array( 'read' ), array(), array(), $history, $since );
+		$this->assertSame( array( 'view_shop_reports' ), array_column( $found, 'cap' ) );
+
+		// Without a history (null), every capability counts, as before.
+		$this->assertCount( 3, Recommender::unused_role_caps( array(), array( 'shop_editor' => 1 ), $roles, array( 'read' ), array() ) );
+	}
+
+	public function test_unused_since_is_the_window_start_or_the_tracking_start(): void {
+		$recommender = $this->recommender();
+		$now         = time();
+
+		// Tracking began 120 days ago, the window is 90 days: the window start.
+		$this->assertSame( $now - 90 * DAY_IN_SECONDS, $recommender->unused_since( $now ) );
+
+		$this->tracking_started( 40 );
+		$this->assertSame( $this->options[ Settings::STARTED ], $recommender->unused_since( $now ) );
+
+		// A window shorter than the learning period: a capability still needs a whole learning period on the role.
+		Filters\expectApplied( 'role_right_sizer_window_days' )->andReturn( 7 );
+		$this->assertSame( $now - 30 * DAY_IN_SECONDS, $recommender->unused_since( $now ) );
 	}
 
 	public function test_core_capabilities_take_a_filter(): void {

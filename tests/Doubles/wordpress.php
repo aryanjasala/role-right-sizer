@@ -89,15 +89,16 @@ if ( ! class_exists( 'WP_User_Query' ) ) {
 		public function __construct( array $args ) {
 			self::$made[]  = $args;
 			$roles         = (array) ( $args['role__in'] ?? array() );
+			$not           = (array) ( $args['role__not_in'] ?? array() );
 			$matching      = array_values(
 				array_filter(
 					self::$users,
-					static function ( $user ) use ( $roles ) {
-						return ! $roles || array_intersect( $user->roles, $roles );
+					static function ( $user ) use ( $roles, $not ) {
+						return ( ! $roles || array_intersect( $user->roles, $roles ) ) && ! array_intersect( $user->roles, $not );
 					}
 				)
 			);
-			$this->results = array_slice( $matching, ( $args['paged'] - 1 ) * $args['number'], $args['number'] );
+			$this->results = array_slice( $matching, ( ( $args['paged'] ?? 1 ) - 1 ) * $args['number'], $args['number'] );
 			$this->total   = count( $matching );
 		}
 

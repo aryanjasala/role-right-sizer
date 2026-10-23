@@ -72,6 +72,11 @@ final class SiteHealth implements Service {
 	/**
 	 * Runs the test from the saved report, without building one.
 	 *
+	 * Only accounts with more access than they use make it a security
+	 * recommendation. Unused capabilities on roles are housekeeping: a leftover
+	 * capability nobody checks grants nothing, and the ones an active plugin
+	 * uses are not counted at all.
+	 *
 	 * @return array
 	 */
 	public function run(): array {
@@ -97,25 +102,66 @@ final class SiteHealth implements Service {
 				)
 			) . '</p>';
 
-			return $result;
+			return $this->filtered( $result );
 		}
 
 		$users = count( $this->report->users() );
-		$roles = count( $this->report->roles() );
-		if ( ! $users && ! $roles ) {
+		$roles = count(
+			array_filter(
+				$this->report->roles(),
+				static function ( array $recommendation ): bool {
+					return ! Report::has_active_owner( $recommendation );
+				}
+			)
+		);
+
+		if ( $users ) {
+			$result['status']         = 'recommended';
+			$result['badge']['color'] = 'orange';
+			/* translators: %s: number of accounts. */
+			$result['label']       = sprintf( _n( '%s account has more access than it uses', '%s accounts have more access than they use', $users, 'role-right-sizer' ), number_format_i18n( $users ) );
+			$result['description'] = '<p>' . esc_html__( 'Accounts with more access than they need do more damage when a password leaks. Role Right-Sizer recommends a smaller role for each one, and every change can be undone.', 'role-right-sizer' ) . '</p>';
+		}
+
+		if ( $roles ) {
+			$result['description'] .= '<p>' . esc_html(
+				sprintf(
+					/* translators: %s: number of capabilities. */
+					_n(
+						'%s capability on a role was never used. It is most likely left over from a plugin that is gone. That is housekeeping, not a risk.',
+						'%s capabilities on roles were never used. They are most likely left over from plugins that are gone. That is housekeeping, not a risk.',
+						$roles,
+						'role-right-sizer'
+					),
+					number_format_i18n( $roles )
+				)
+			) . '</p>';
+		}
+
+		if ( $users || $roles ) {
+			$result['actions'] = sprintf( '<p><a href="%s">%s</a></p>', esc_url( Screen::url() ), esc_html__( 'See the recommendations', 'role-right-sizer' ) );
+		}
+
+		return $this->filtered( $result );
+	}
+
+	/**
+	 * The result, through a filter.
+	 *
+	 * @param array $result Site Health result.
+	 * @return array
+	 */
+	private function filtered( array $result ): array {
+		/**
+		 * Filters Role Right-Sizer's Site Health result.
+		 *
+		 * @param array $result `label`, `status` (good, recommended or critical), `badge`, `description`, `actions` and `test`.
+		 */
+		$filtered = (array) apply_filters( 'role_right_sizer_site_health_result', $result );
+		if ( ! in_array( $filtered['status'] ?? '', array( 'good', 'recommended', 'critical' ), true ) ) {
 			return $result;
 		}
 
-		$result['status']         = 'recommended';
-		$result['badge']['color'] = 'orange';
-		$result['label']          = $users
-			/* translators: %s: number of accounts. */
-			? sprintf( _n( '%s account has more access than it uses', '%s accounts have more access than they use', $users, 'role-right-sizer' ), number_format_i18n( $users ) )
-			/* translators: %s: number of capabilities. */
-			: sprintf( _n( '%s capability on a role is never used', '%s capabilities on roles are never used', $roles, 'role-right-sizer' ), number_format_i18n( $roles ) );
-		$result['description'] = '<p>' . esc_html__( 'Accounts with more access than they need do more damage when a password leaks. Role Right-Sizer recommends a smaller role for each one, and every change can be undone.', 'role-right-sizer' ) . '</p>';
-		$result['actions']     = sprintf( '<p><a href="%s">%s</a></p>', esc_url( Screen::url() ), esc_html__( 'See the recommendations', 'role-right-sizer' ) );
-
-		return $result;
+		return array_merge( $result, $filtered );
 	}
 }

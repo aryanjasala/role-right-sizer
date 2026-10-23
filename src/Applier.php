@@ -140,7 +140,8 @@ final class Applier {
 	/**
 	 * Removes a capability no user of a role used from that role.
 	 *
-	 * Only what the saved report recommends can be applied.
+	 * Only what the saved report recommends can be applied, and never on a
+	 * protected role (see Recommender::protected_roles()).
 	 *
 	 * @param string $role  Role name.
 	 * @param string $cap   Capability.
@@ -153,6 +154,11 @@ final class Applier {
 			if ( $recommendation['role'] === $role && $recommendation['cap'] === $cap ) {
 				$known = true;
 			}
+		}
+
+		if ( in_array( $role, Recommender::protected_roles(), true ) ) {
+			// Checked again here: a report saved by an older version may still list it.
+			return new \WP_Error( 'role_right_sizer_protected', __( 'Capabilities are never removed from the administrator role or a role that can manage options.', 'role-right-sizer' ) );
 		}
 
 		$object = get_role( $role );

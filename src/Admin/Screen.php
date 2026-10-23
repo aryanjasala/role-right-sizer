@@ -8,6 +8,7 @@
 namespace AryanX\RoleRightSizer\Admin;
 
 use AryanX\RoleRightSizer\Applier;
+use AryanX\RoleRightSizer\CapabilityOwners;
 use AryanX\RoleRightSizer\Changes;
 use AryanX\RoleRightSizer\Recommender;
 use AryanX\RoleRightSizer\Report;
@@ -138,10 +139,12 @@ final class Screen implements Service {
 	}
 
 	/**
-	 * Screen styles.
+	 * Screen styles, and the script behind the review bar and the group checkboxes.
 	 */
 	public function enqueue_assets(): void {
 		wp_enqueue_style( 'role-right-sizer-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array(), VERSION );
+		wp_enqueue_script( 'role-right-sizer-admin', plugins_url( 'assets/admin.js', PLUGIN_FILE ), array( 'wp-hooks', 'wp-i18n' ), VERSION, true );
+		wp_set_script_translations( 'role-right-sizer-admin', 'role-right-sizer' );
 	}
 
 	/**
@@ -281,6 +284,8 @@ final class Screen implements Service {
 									"><?php esc_html_e( 'Download CSV', 'role-right-sizer' ); ?></a>
 		</div>
 
+		<?php $this->render_skipped( $report ); ?>
+
 		<?php if ( 'running' === $report['status'] ) : ?>
 			<div class="notice notice-info inline"><p>
 				<?php
@@ -335,7 +340,10 @@ final class Screen implements Service {
 			);
 			$this->render_role_table( $report['roles'] );
 			?>
-			<p class="submit"><button type="submit" class="button button-primary"><?php esc_html_e( 'Review selected changes', 'role-right-sizer' ); ?></button></p>
+			<div class="rrs-review-bar">
+				<button type="submit" class="button button-primary rrs-review-button" data-label="<?php esc_attr_e( 'Review selected changes', 'role-right-sizer' ); ?>"><?php esc_html_e( 'Review selected changes', 'role-right-sizer' ); ?></button>
+				<span class="rrs-muted"><?php esc_html_e( 'Nothing changes until you confirm on the next screen.', 'role-right-sizer' ); ?></span>
+			</div>
 		</form>
 		<?php
 	}
@@ -381,6 +389,44 @@ final class Screen implements Service {
 				?>
 			</p>
 		</section>
+		<?php
+	}
+
+	/**
+	 * Prints which accounts are not checked, and why.
+	 *
+	 * @param array $report The saved report.
+	 */
+	private function render_skipped( array $report ): void {
+		$lines = array();
+		if ( $report['too_new'] > 0 ) {
+			$lines[] = sprintf(
+				/* translators: 1: number of accounts, 2: number of days. */
+				_n( '%1$s account has not logged in yet but is less than %2$s days old, so it is not flagged yet.', '%1$s accounts have not logged in yet but are less than %2$s days old, so they are not flagged yet.', $report['too_new'], 'role-right-sizer' ),
+				number_format_i18n( $report['too_new'] ),
+				number_format_i18n( $this->settings->learning_days() )
+			);
+		}
+		if ( $report['read_only'] > 0 ) {
+			$lines[] = sprintf(
+				/* translators: %s: number of accounts. */
+				_n( '%s account has no role beyond reading, so there is nothing to make smaller. It is not checked.', '%s accounts have no role beyond reading, so there is nothing to make smaller. They are not checked.', $report['read_only'], 'role-right-sizer' ),
+				number_format_i18n( $report['read_only'] )
+			);
+		}
+
+		/**
+		 * Filters the lines that say which accounts the report did not check, and why.
+		 *
+		 * @param string[] $lines  Default one line for accounts that never logged in but are younger than the learning period, and one for read-only accounts, when there are any.
+		 * @param array    $report The saved report.
+		 */
+		$lines = Settings::strings( apply_filters( 'role_right_sizer_skipped_lines', $lines, $report ) );
+		if ( ! $lines ) {
+			return;
+		}
+		?>
+		<p class="rrs-skipped rrs-muted"><?php echo esc_html( implode( ' ', $lines ) ); ?></p>
 		<?php
 	}
 
@@ -472,7 +518,68 @@ final class Screen implements Service {
 	}
 
 	/**
-	 * Prints the unused capabilities on roles.
+	 * Unused capabilities grouped by role and by who they belong to.
+	 *
+	 * Sorted by role name. Within a role, capabilities nobody can place come
+	 * first, then each owner in the order the report found them.
+	 *
+	 * @param array[] $recommendations `unused_cap` recommendations.
+	 * @return array<string, array{key: string, role: string, owner: array|null, users: int, caps: string[]}> By group key.
+	 */
+	public static function group_role_caps( array $recommendations ): array {
+		$groups = array();
+		foreach ( $recommendations as $recommendation ) {
+			$role  = (string) ( $recommendation['role'] ?? '' );
+			$owner = CapabilityOwners::normalize( $recommendation['owner'] ?? null );
+			$key   = $role . '|' . CapabilityOwners::key( $owner );
+			if ( ! isset( $groups[ $key ] ) ) {
+				$groups[ $key ] = array(
+					'key'   => $key,
+					'role'  => $role,
+					'owner' => $owner,
+					'users' => (int) ( $recommendation['users'] ?? 0 ),
+					'caps'  => array(),
+				);
+			}
+			$groups[ $key ]['caps'][] = (string) ( $recommendation['cap'] ?? '' );
+		}
+
+		$order = array_flip( array_keys( $groups ) );
+		uksort(
+			$groups,
+			static function ( $a, $b ) use ( $groups, $order ) {
+				return array( $groups[ $a ]['role'], null === $groups[ $a ]['owner'] ? 0 : 1, $order[ $a ] ) <=> array( $groups[ $b ]['role'], null === $groups[ $b ]['owner'] ? 0 : 1, $order[ $b ] );
+			}
+		);
+
+		return $groups;
+	}
+
+	/**
+	 * One line about who a capability belongs to.
+	 *
+	 * @param array|null $owner Owner, see CapabilityOwners.
+	 * @return string '' when unknown.
+	 */
+	public static function owner_label( ?array $owner ): string {
+		if ( ! $owner ) {
+			return '';
+		}
+
+		if ( in_array( $owner['type'], array( 'post_type', 'taxonomy' ), true ) ) {
+			/* translators: %s: post type or taxonomy name, e.g. "Products". */
+			return sprintf( __( 'Checked by %s, which is registered on this site.', 'role-right-sizer' ), $owner['name'] );
+		}
+
+		return $owner['active']
+			/* translators: %s: plugin name. */
+			? sprintf( __( 'Belongs to %s, which is active.', 'role-right-sizer' ), $owner['name'] )
+			/* translators: %s: plugin name or folder. */
+			: sprintf( __( 'Added by %s, which is not active.', 'role-right-sizer' ), $owner['name'] );
+	}
+
+	/**
+	 * Prints the unused capabilities on roles, one row per role and owner.
 	 *
 	 * @param array[] $recommendations `unused_cap` recommendations.
 	 */
@@ -480,49 +587,77 @@ final class Screen implements Service {
 		if ( ! $recommendations ) {
 			return;
 		}
+		$groups = self::group_role_caps( $recommendations );
 		?>
 		<section class="rrs-section rrs-section--roles">
 			<h2><?php esc_html_e( 'Unused capabilities on roles', 'role-right-sizer' ); ?> <span class="count">(<?php echo esc_html( number_format_i18n( count( $recommendations ) ) ); ?>)</span></h2>
-			<p class="rrs-muted"><?php esc_html_e( 'Capabilities a role grants that none of its users used. Usually left behind by a plugin. Core capabilities are not listed here.', 'role-right-sizer' ); ?></p>
-			<table class="wp-list-table widefat striped rrs-table">
+			<p class="rrs-muted"><?php esc_html_e( 'Capabilities a role has had for the whole window that none of its users used. Usually left behind by a plugin. Core capabilities, new ones and the administrator role are not listed here.', 'role-right-sizer' ); ?></p>
+			<table class="wp-list-table widefat striped rrs-table rrs-groups">
 				<thead>
 					<tr>
 						<td class="manage-column column-cb check-column"><input type="checkbox" id="rrs-all-roles" aria-label="<?php esc_attr_e( 'Select all', 'role-right-sizer' ); ?>"></td>
 						<th scope="col" class="column-primary"><?php esc_html_e( 'Role', 'role-right-sizer' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Unused capability', 'role-right-sizer' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Unused capabilities', 'role-right-sizer' ); ?></th>
 						<th scope="col" class="num"><?php esc_html_e( 'Users with the role', 'role-right-sizer' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
-					<?php foreach ( $recommendations as $index => $recommendation ) : ?>
-						<?php $pair = $recommendation['role'] . '|' . $recommendation['cap']; ?>
-						<tr data-role="<?php echo esc_attr( (string) $recommendation['role'] ); ?>" data-cap="<?php echo esc_attr( (string) $recommendation['cap'] ); ?>">
+					<?php foreach ( array_values( $groups ) as $index => $group ) : ?>
+						<?php
+						$role_label = self::role_label( $group['role'] );
+						$count      = count( $group['caps'] );
+						$owner      = self::owner_label( $group['owner'] );
+						?>
+						<tr class="rrs-group<?php echo $group['owner'] && $group['owner']['active'] ? ' rrs-group--active-owner' : ''; ?>" data-role="<?php echo esc_attr( $group['role'] ); ?>" data-owner="<?php echo esc_attr( CapabilityOwners::key( $group['owner'] ) ); ?>">
 							<th scope="row" class="check-column">
-								<input type="checkbox" name="caps[]" value="<?php echo esc_attr( $pair ); ?>" id="rrs-cap-<?php echo esc_attr( (string) $index ); ?>">
-								<label class="screen-reader-text" for="rrs-cap-<?php echo esc_attr( (string) $index ); ?>">
+								<input type="checkbox" name="groups[]" value="<?php echo esc_attr( $group['key'] ); ?>" id="rrs-group-<?php echo esc_attr( (string) $index ); ?>">
+								<label class="screen-reader-text" for="rrs-group-<?php echo esc_attr( (string) $index ); ?>">
 									<?php
-									/* translators: 1: capability, 2: role. */
-									echo esc_html( sprintf( __( 'Select %1$s on %2$s', 'role-right-sizer' ), $recommendation['cap'], self::role_label( (string) $recommendation['role'] ) ) );
+									/* translators: 1: number of capabilities, 2: role. */
+									echo esc_html( sprintf( _n( 'Select the %1$s unused capability on %2$s', 'Select all %1$s unused capabilities on %2$s', $count, 'role-right-sizer' ), number_format_i18n( $count ), $role_label ) );
 									?>
 								</label>
 							</th>
 							<td class="column-primary">
-								<strong><?php echo esc_html( self::role_label( (string) $recommendation['role'] ) ); ?></strong>
-								<div class="row-actions"><a href="
-								<?php
-								echo esc_url(
-									self::url(
-										array(
-											'view' => 'confirm',
-											'caps' => array( $pair ),
-										) 
-									) 
-								);
-								?>
-																	"><?php esc_html_e( 'Remove from role', 'role-right-sizer' ); ?></a></div>
+								<strong><?php echo esc_html( $role_label ); ?></strong>
+								<?php if ( '' !== $owner ) : ?>
+									<span class="rrs-owner"><?php echo esc_html( $owner ); ?></span>
+								<?php endif; ?>
 							</td>
-							<td><code><?php echo esc_html( (string) $recommendation['cap'] ); ?></code></td>
-							<td class="num"><?php echo esc_html( number_format_i18n( (int) $recommendation['users'] ) ); ?></td>
+							<td>
+								<details class="rrs-caps">
+									<summary>
+										<?php
+										/* translators: %s: number of capabilities. */
+										echo esc_html( sprintf( _n( '%s capability', '%s capabilities', $count, 'role-right-sizer' ), number_format_i18n( $count ) ) );
+										?>
+									</summary>
+									<ul class="rrs-group-caps">
+										<?php foreach ( $group['caps'] as $cap_index => $cap ) : ?>
+											<?php
+											$pair = $group['role'] . '|' . $cap;
+											$id   = 'rrs-cap-' . $index . '-' . $cap_index;
+											?>
+											<li data-role="<?php echo esc_attr( $group['role'] ); ?>" data-cap="<?php echo esc_attr( $cap ); ?>">
+												<input type="checkbox" name="caps[]" value="<?php echo esc_attr( $pair ); ?>" id="<?php echo esc_attr( $id ); ?>">
+												<label for="<?php echo esc_attr( $id ); ?>"><code><?php echo esc_html( $cap ); ?></code></label>
+												<?php
+												$link = self::url(
+													array(
+														'view' => 'confirm',
+														'caps' => array( $pair ),
+													)
+												);
+												/* translators: 1: capability, 2: role. */
+												$link_label = sprintf( __( 'Remove %1$s from %2$s', 'role-right-sizer' ), $cap, $role_label );
+												?>
+												<a class="rrs-remove" href="<?php echo esc_url( $link ); ?>" aria-label="<?php echo esc_attr( $link_label ); ?>"><?php esc_html_e( 'Remove from role', 'role-right-sizer' ); ?></a>
+											</li>
+										<?php endforeach; ?>
+									</ul>
+								</details>
+							</td>
+							<td class="num"><?php echo esc_html( number_format_i18n( $group['users'] ) ); ?></td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -538,7 +673,16 @@ final class Screen implements Service {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Shows a preview only; applying needs the nonce in the form below.
 		$user_ids = isset( $_GET['users'] ) ? array_map( 'absint', (array) wp_unslash( $_GET['users'] ) ) : array();
 		$pairs    = isset( $_GET['caps'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_GET['caps'] ) ) : array();
+		$picked   = isset( $_GET['groups'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_GET['groups'] ) ) : array();
 		// phpcs:enable
+
+		// A ticked group stands for every capability in it.
+		$groups = self::group_role_caps( $this->report->roles() );
+		foreach ( $picked as $key ) {
+			foreach ( isset( $groups[ $key ] ) ? $groups[ $key ]['caps'] : array() as $cap ) {
+				$pairs[] = $groups[ $key ]['role'] . '|' . $cap;
+			}
+		}
 
 		$items = array();
 		foreach ( array_unique( array_filter( $user_ids ) ) as $user_id ) {
@@ -565,8 +709,15 @@ final class Screen implements Service {
 		foreach ( $this->report->roles() as $recommendation ) {
 			$known[ $recommendation['role'] . '|' . $recommendation['cap'] ] = $recommendation;
 		}
+		$protected = Recommender::protected_roles();
 		foreach ( array_unique( $pairs ) as $pair ) {
 			$parts   = explode( '|', $pair, 2 );
+			$problem = '';
+			if ( in_array( $parts[0], $protected, true ) ) {
+				$problem = __( 'Capabilities are never removed from the administrator role or a role that can manage options.', 'role-right-sizer' );
+			} elseif ( ! isset( $known[ $pair ] ) ) {
+				$problem = __( 'That capability is not recommended for removal from this role.', 'role-right-sizer' );
+			}
 			$items[] = array(
 				'field'   => 'caps[]',
 				'value'   => $pair,
@@ -575,7 +726,8 @@ final class Screen implements Service {
 				/* translators: %s: capability. */
 				'change'  => isset( $parts[1] ) ? sprintf( __( 'Remove %s', 'role-right-sizer' ), $parts[1] ) : '',
 				'lost'    => isset( $parts[1] ) ? array( $parts[1] ) : array(),
-				'problem' => isset( $known[ $pair ] ) ? '' : __( 'That capability is not recommended for removal from this role.', 'role-right-sizer' ),
+				'owner'   => isset( $known[ $pair ] ) ? self::owner_label( CapabilityOwners::normalize( $known[ $pair ]['owner'] ?? null ) ) : '',
+				'problem' => $problem,
 			);
 		}
 
@@ -603,6 +755,9 @@ final class Screen implements Service {
 								<strong><?php echo esc_html( $item['title'] ); ?></strong>
 								<?php if ( '' !== $item['change'] ) : ?>
 									<span class="rrs-change"><?php echo esc_html( $item['change'] ); ?></span>
+								<?php endif; ?>
+								<?php if ( '' !== ( $item['owner'] ?? '' ) ) : ?>
+									<span class="rrs-owner"><?php echo esc_html( $item['owner'] ); ?></span>
 								<?php endif; ?>
 								<?php if ( '' === $item['problem'] ) : ?>
 									<input type="hidden" name="<?php echo esc_attr( $item['field'] ); ?>" value="<?php echo esc_attr( $item['value'] ); ?>">
@@ -929,6 +1084,7 @@ final class Screen implements Service {
 			'role_right_sizer_not_found'  => __( 'That change or account no longer exists.', 'role-right-sizer' ),
 			'role_right_sizer_undone'     => __( 'That change was already undone.', 'role-right-sizer' ),
 			'role_right_sizer_gone'       => __( 'The account or role of that change no longer exists.', 'role-right-sizer' ),
+			'role_right_sizer_protected'  => __( 'Capabilities are never removed from the administrator role or a role that can manage options.', 'role-right-sizer' ),
 		);
 	}
 

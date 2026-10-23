@@ -20,7 +20,7 @@ test( 'demo: review a recommendation, apply it, undo it', async ( { browser } ) 
 			await demo.click( pat.locator( 'details' ).nth( 1 ).locator( 'summary' ), 1800 );
 			await demo.click( pat.locator( 'input[name="users[]"]' ), 400 );
 			await demo.click( page.locator( 'tr[data-user="olive"] input[name="users[]"]' ), 600 );
-			await demo.click( page.getByRole( 'button', { name: 'Review selected changes' } ), 400 );
+			await demo.click( page.getByRole( 'button', { name: 'Review 2 selected changes' } ), 400 );
 
 			await expect( page.getByRole( 'button', { name: 'Apply 2 changes' } ) ).toBeVisible();
 			await demo.moveTo( page.locator( '.rrs-confirm-list li' ).first() );
