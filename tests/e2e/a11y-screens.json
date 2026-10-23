@@ -1,0 +1,52 @@
+{
+  "$comment": "Screens tests/e2e/a11y.spec.js checks with axe-core. This file belongs to the plugin: apply-template.py only writes it when it is missing. The fields are described in docs/DEVELOPMENT.md.",
+  "include": ["#wpbody-content"],
+  "exclude": [],
+  "screens": [
+    {
+      "name": "Users > Right-Sizer during the learning period",
+      "setup": [{ "js": "seed.js", "call": "seed", "args": [12] }],
+      "url": "/wp-admin/users.php?page=role-right-sizer",
+      "steps": [{ "waitFor": ".rrs-learning" }],
+      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+    },
+    {
+      "name": "Users > Right-Sizer recommendations with the used capabilities open",
+      "setup": [{ "js": "seed.js", "call": "seed" }, ["role-right-sizer", "report"]],
+      "url": "/wp-admin/users.php?page=role-right-sizer",
+      "steps": [{ "click": "tr[data-user=\"pat\"] details >> nth=1 >> summary" }],
+      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+    },
+    {
+      "name": "Users > Right-Sizer confirmation step",
+      "setup": [{ "js": "seed.js", "call": "seed" }, ["role-right-sizer", "report"]],
+      "url": "/wp-admin/users.php?page=role-right-sizer",
+      "steps": [
+        { "click": "tr[data-user=\"pat\"] input[name=\"users[]\"]" },
+        { "click": "tr[data-user=\"olive\"] input[name=\"users[]\"]" },
+        { "click": "tr.rrs-group[data-role=\"shop_editor\"] input[name=\"groups[]\"]" },
+        { "click": "role=button[name=/Review 3 selected changes/i]" },
+        { "waitFor": "role=button[name=/Apply 3 changes/i]" }
+      ],
+      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+    },
+    {
+      "name": "Users > Right-Sizer change log with Undo",
+      "setup": [{ "js": "seed.js", "call": "seed" }, ["role-right-sizer", "report"]],
+      "url": "/wp-admin/users.php?page=role-right-sizer",
+      "steps": [
+        { "click": "tr[data-user=\"pat\"] input[name=\"users[]\"]" },
+        { "click": "tr[data-user=\"olive\"] input[name=\"users[]\"]" },
+        { "click": "role=button[name=/Review 2 selected changes/i]" },
+        { "click": "role=button[name=/Apply 2 changes/i]" },
+        { "waitFor": ".rrs-changes" }
+      ],
+      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+    },
+    {
+      "name": "Users > Right-Sizer settings",
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=settings"
+    }
+  ],
+  "skip": {}
+}
