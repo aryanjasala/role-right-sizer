@@ -23,8 +23,9 @@ defined( 'ABSPATH' ) || exit;
  * - `used`: capabilities used in the window, `cap => last used`
  * - `last_active`, `last_login`
  *
- * A recommendation for a role is `type` `unused_cap`, with `role`, `cap` and
- * `users` (how many users have the role).
+ * A recommendation for a role is `type` `unused_cap`, with `role`, `cap`,
+ * `users` (how many users have the role) and `owner` (who the capability
+ * belongs to, see CapabilityOwners, or null).
  */
 final class Recommender {
 
@@ -116,6 +117,44 @@ final class Recommender {
 		}
 
 		return $list;
+	}
+
+	/**
+	 * Roles whose capabilities are never suggested for removal.
+	 *
+	 * The administrator role and every role that grants `manage_options`: plugins
+	 * give their own screens to administrators, and taking a capability away
+	 * there can lock every administrator out of a plugin.
+	 *
+	 * @return string[]
+	 */
+	public static function protected_roles(): array {
+		$roles = array_values( array_unique( array_merge( array( 'administrator' ), self::admin_roles() ) ) );
+
+		/**
+		 * Filters the roles whose capabilities Role Right-Sizer never suggests removing.
+		 *
+		 * Users with these roles can still get a smaller role. Remove a role from
+		 * the list to have its unused capabilities listed too.
+		 *
+		 * @param string[] $roles Default `administrator` and every role that grants `manage_options`.
+		 */
+		return Settings::strings( apply_filters( 'role_right_sizer_protected_roles', $roles ) );
+	}
+
+	/**
+	 * Since when a capability must have been on its role to count as unused:
+	 * the start of the usage window, or when tracking began if that was later.
+	 * Never less than a whole learning period ago, so a capability a plugin
+	 * added during the learning period is never called unused.
+	 *
+	 * @param int $now Unix time.
+	 * @return int Unix time.
+	 */
+	public function unused_since( int $now ): int {
+		$since = max( $this->settings->tracking_started(), $now - $this->settings->window_days() * DAY_IN_SECONDS );
+
+		return min( $since, $now - $this->settings->learning_days() * DAY_IN_SECONDS );
 	}
 
 	/**
@@ -438,28 +477,45 @@ final class Recommender {
 	/**
 	 * Capabilities a role grants that none of its users used.
 	 *
-	 * @param array<string, array<string, int>> $role_usage `role => [ cap => last used ]`, from every user with the role.
-	 * @param array<string, int>                $role_users `role => number of users`.
-	 * @param array<string, string[]>           $roles      Role name => granted capabilities.
-	 * @param string[]                          $skip       Capabilities never suggested: ignored and core ones.
-	 * @param string[]                          $excluded   Roles never touched.
+	 * Protected roles are skipped. With a capability history, a capability only
+	 * counts once it has been on the role since `$since`: one a plugin added
+	 * during the window never had the chance to be used.
+	 *
+	 * @param array<string, array<string, int>> $role_usage      `role => [ cap => last used ]`, from every user with the role.
+	 * @param array<string, int>                $role_users      `role => number of users`.
+	 * @param array<string, string[]>           $roles           Role name => granted capabilities.
+	 * @param string[]                          $skip            Capabilities never suggested: ignored and core ones.
+	 * @param string[]                          $excluded        Roles never touched.
+	 * @param string[]                          $protected_roles Roles whose capabilities are never suggested, from protected_roles().
+	 * @param array|null                        $history         Capability history (CapabilityHistory::current()), or null to skip the check.
+	 * @param int                               $since           Unix time a capability must have been on the role since.
 	 * @return array[] One `unused_cap` recommendation per role and capability.
 	 */
-	public static function unused_role_caps( array $role_usage, array $role_users, array $roles, array $skip, array $excluded ): array {
+	public static function unused_role_caps( array $role_usage, array $role_users, array $roles, array $skip, array $excluded, array $protected_roles = array(), ?array $history = null, int $since = 0 ): array {
 		$found = array();
 		foreach ( $role_users as $role => $count ) {
-			if ( $count < 1 || ! isset( $roles[ $role ] ) || in_array( $role, $excluded, true ) ) {
+			$role = (string) $role;
+			if ( $count < 1 || ! isset( $roles[ $role ] ) || in_array( $role, $excluded, true ) || in_array( $role, $protected_roles, true ) ) {
 				continue;
 			}
 			foreach ( array_diff( $roles[ $role ], $skip ) as $cap ) {
-				if ( ! isset( $role_usage[ $role ][ $cap ] ) ) {
-					$found[] = array(
-						'type'  => 'unused_cap',
-						'role'  => (string) $role,
-						'cap'   => (string) $cap,
-						'users' => (int) $count,
-					);
+				if ( isset( $role_usage[ $role ][ $cap ] ) ) {
+					continue;
 				}
+				if ( null !== $history ) {
+					$first = CapabilityHistory::first_seen( $history, $role, (string) $cap );
+					if ( ! $first || $first > $since ) {
+						// New on the role: too early to call it unused.
+						continue;
+					}
+				}
+				$found[] = array(
+					'type'  => 'unused_cap',
+					'role'  => $role,
+					'cap'   => (string) $cap,
+					'users' => (int) $count,
+					'owner' => null,
+				);
 			}
 		}
 

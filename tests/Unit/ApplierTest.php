@@ -124,6 +124,7 @@ final class ApplierTest extends PluginTestCase {
 		$this->add_user( 6, array( 'shop_editor' ) );
 		$this->used( 6, array( 'edit_posts' => 1 ) );
 		$this->active( 6, 1 );
+		$this->had( 'shop_editor', array( 'read', 'edit_posts', 'view_shop_reports' ), 60 );
 		$applier = $this->applier();
 		$this->report->rebuild();
 
@@ -139,6 +140,30 @@ final class ApplierTest extends PluginTestCase {
 		$this->assertCount( 2, $undone['undone'] );
 		$this->assertTrue( $this->roles['shop_editor']->has_cap( 'view_shop_reports' ) );
 		$this->assertSame( array( 'administrator' ), $this->users[5]->roles );
+	}
+
+	public function test_a_capability_is_never_removed_from_a_protected_role_even_when_an_old_report_lists_it(): void {
+		$this->roles['administrator']->add_cap( 'agent_governance_approve' );
+		$applier = $this->applier();
+		// A report saved by version 1.0.0, before administrators were protected.
+		$this->options[ Report::OPTION ] = array(
+			'status' => 'done',
+			'built'  => time(),
+			'roles'  => array(
+				array(
+					'type'  => 'unused_cap',
+					'role'  => 'administrator',
+					'cap'   => 'agent_governance_approve',
+					'users' => 2,
+				),
+			),
+		);
+
+		$result = $applier->apply_role_cap( 'administrator', 'agent_governance_approve' );
+
+		$this->assertSame( 'role_right_sizer_protected', $result->get_error_code() );
+		$this->assertTrue( $this->roles['administrator']->has_cap( 'agent_governance_approve' ) );
+		$this->assertSame( array(), $this->changes->all() );
 	}
 
 	public function test_the_log_keeps_its_size_and_forgets_people(): void {

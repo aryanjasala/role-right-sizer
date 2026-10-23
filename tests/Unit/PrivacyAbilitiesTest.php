@@ -160,4 +160,66 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 		$this->assertTrue( $recommendations['learning'] );
 		$this->assertSame( array(), $recommendations['users'] );
 	}
+
+	public function test_unused_capabilities_say_who_they_belong_to_for_agents(): void {
+		list( $abilities ) = $this->parts();
+		$this->options[ Report::OPTION ] = array(
+			'format' => Report::FORMAT,
+			'status' => 'done',
+			'built'  => time(),
+			'roles'  => array(
+				array( 'role' => 'shop_editor', 'cap' => 'manage_woocommerce', 'users' => 1, 'owner' => array( 'type' => 'plugin', 'id' => 'woocommerce/woocommerce.php', 'name' => 'WooCommerce', 'active' => true ) ),
+				array( 'role' => 'shop_editor', 'cap' => 'old_cap', 'users' => 1, 'owner' => null ),
+			),
+		);
+
+		$this->assertSame(
+			array(
+				array( 'role' => 'shop_editor', 'cap' => 'manage_woocommerce', 'users' => 1, 'owner' => 'WooCommerce', 'owner_active' => true ),
+				array( 'role' => 'shop_editor', 'cap' => 'old_cap', 'users' => 1, 'owner' => '', 'owner_active' => false ),
+			),
+			$abilities->get_recommendations()['roles']
+		);
+	}
+
+	public function test_agent_governance_gets_a_preview_of_a_held_call(): void {
+		Functions\when( 'number_format_i18n' )->alias( 'strval' );
+		Functions\when( 'get_edit_user_link' )->justReturn( 'https://example.com/wp-admin/user-edit.php?user_id=5' );
+		Functions\when( 'translate_user_role' )->returnArg();
+		list( $abilities ) = $this->parts();
+		$this->current_user = 0;
+		$call = static function ( string $name, array $input ): array {
+			return array(
+				'source' => 'ability',
+				'target' => 'role-right-sizer/' . $name,
+				'method' => 'POST',
+				'kind'   => 'destructive',
+				'input'  => $input,
+			);
+		};
+
+		$preview = $abilities->dry_run( null, $call( 'apply-recommendation', array( 'user_id' => 5 ) ) );
+		$this->assertStringStartsWith( 'Moves User 5 (pat) from Administrator to Editor.', $preview['summary'] );
+		$this->assertSame( array( 'field' => 'Role', 'before' => 'Administrator', 'after' => 'Editor' ), $preview['changes'][0] );
+		$this->assertStringContainsString( 'manage_options', $preview['changes'][1]['after'] );
+		$this->assertSame( 5, $preview['object']['id'] );
+
+		$this->assertStringContainsString( 'never removed from the administrator role', $abilities->dry_run( null, $call( 'apply-recommendation', array( 'role' => 'administrator', 'capability' => 'x' ) ) )['summary'] );
+		$this->assertSame( 'Removes old_cap from the shop_editor role, for everyone with the role. Undo puts it back.', $abilities->dry_run( null, $call( 'apply-recommendation', array( 'role' => 'shop_editor', 'capability' => 'old_cap' ) ) )['summary'] );
+
+		// Nothing changed while previewing.
+		$this->assertSame( array( 'administrator' ), $this->users[5]->roles );
+
+		$this->current_user = 1;
+		$applied = $abilities->apply_recommendation( array( 'user_id' => 5 ) );
+		$undo    = $abilities->dry_run( null, $call( 'undo-change', array( 'change_id' => $applied['changes'][0]['id'] ) ) );
+		$this->assertSame( 'Undoes 1 Role Right-Sizer change and puts back what it took away.', $undo['summary'] );
+		$this->assertSame( array( 'field' => 'Role of User 5', 'before' => 'Editor', 'after' => 'Administrator' ), $undo['changes'][0] );
+		$this->assertStringContainsString( 'not in the log', $abilities->dry_run( null, $call( 'undo-change', array( 'change_id' => 999 ) ) )['summary'] );
+
+		// Other calls, and previews another plugin already made, are left alone.
+		$this->assertNull( $abilities->dry_run( null, $call( 'get-recommendations', array() ) ) );
+		$this->assertSame( array( 'summary' => 'Theirs' ), $abilities->dry_run( array( 'summary' => 'Theirs' ), $call( 'undo-change', array( 'change_id' => 1 ) ) ) );
+		$this->assertNull( $abilities->dry_run( null, array( 'source' => 'rest', 'target' => 'role-right-sizer/undo-change' ) ) );
+	}
 }

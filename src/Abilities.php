@@ -95,6 +95,8 @@ final class Abilities implements Service {
 
 		add_action( 'wp_abilities_api_categories_init', array( $this, 'register_category' ) );
 		add_action( 'wp_abilities_api_init', array( $this, 'register_abilities' ) );
+		// What an approver sees when Agent Governance holds one of these calls.
+		add_filter( 'agent_governance_dry_run', array( $this, 'dry_run' ), 10, 2 );
 	}
 
 	/**
@@ -180,9 +182,17 @@ final class Abilities implements Service {
 						'items' => array(
 							'type'       => 'object',
 							'properties' => array(
-								'role'  => array( 'type' => 'string' ),
-								'cap'   => array( 'type' => 'string' ),
-								'users' => array( 'type' => 'integer' ),
+								'role'         => array( 'type' => 'string' ),
+								'cap'          => array( 'type' => 'string' ),
+								'users'        => array( 'type' => 'integer' ),
+								'owner'        => array(
+									'type'        => 'string',
+									'description' => 'The plugin, post type or taxonomy the capability belongs to, when it can be told.',
+								),
+								'owner_active' => array(
+									'type'        => 'boolean',
+									'description' => 'Whether that owner is active. Removing its capabilities can break it.',
+								),
 							),
 						),
 					),
@@ -343,12 +353,24 @@ final class Abilities implements Service {
 			);
 		}
 
+		$roles = array();
+		foreach ( $learning ? array() : $report['roles'] as $recommendation ) {
+			$owner   = is_array( $recommendation['owner'] ?? null ) ? $recommendation['owner'] : null;
+			$roles[] = array(
+				'role'         => (string) $recommendation['role'],
+				'cap'          => (string) $recommendation['cap'],
+				'users'        => (int) $recommendation['users'],
+				'owner'        => $owner ? (string) $owner['name'] : '',
+				'owner_active' => Report::has_active_owner( $recommendation ),
+			);
+		}
+
 		return array(
 			'learning'      => $learning,
 			'learning_ends' => self::iso( $this->settings->learning_ends() ),
 			'built'         => self::iso( $report['built'] ),
 			'users'         => $users,
-			'roles'         => $learning ? array() : $report['roles'],
+			'roles'         => $roles,
 		);
 	}
 
@@ -452,6 +474,159 @@ final class Abilities implements Service {
 		}
 
 		return array( 'undone' => array( $result ) );
+	}
+
+	/**
+	 * The preview Agent Governance shows before someone approves a held call
+	 * to apply-recommendation or undo-change. Works it out without changing anything.
+	 *
+	 * @param mixed $preview Null, or a preview another plugin made.
+	 * @param mixed $call    source, target, method, kind and input.
+	 * @return mixed
+	 */
+	public function dry_run( $preview, $call ) {
+		if ( null !== $preview || ! is_array( $call ) || 'ability' !== ( $call['source'] ?? '' ) ) {
+			return $preview;
+		}
+
+		$input = is_array( $call['input'] ?? null ) ? $call['input'] : array();
+		switch ( (string) ( $call['target'] ?? '' ) ) {
+			case self::CATEGORY . '/apply-recommendation':
+				return $this->preview_apply( $input );
+			case self::CATEGORY . '/undo-change':
+				return $this->preview_undo( $input );
+		}
+
+		return $preview;
+	}
+
+	/**
+	 * Preview of apply-recommendation.
+	 *
+	 * @param array $input Ability input.
+	 * @return array
+	 */
+	private function preview_apply( array $input ): array {
+		$user_id = (int) ( $input['user_id'] ?? 0 );
+		if ( $user_id ) {
+			$user           = get_userdata( $user_id );
+			$recommendation = $user ? $this->recommender->for_user( $user, time(), Recommender::admin_count() ) : null;
+			if ( ! $user || ! $recommendation ) {
+				return array( 'summary' => __( 'There is nothing to change for this user, so this call will fail.', 'role-right-sizer' ) );
+			}
+
+			return array(
+				'summary' => sprintf(
+					/* translators: 1: user name, 2: username, 3: roles now, 4: recommended role, 5: number of capabilities. */
+					_n( 'Moves %1$s (%2$s) from %3$s to %4$s. They lose %5$s capability. Undo puts it back.', 'Moves %1$s (%2$s) from %3$s to %4$s. They lose %5$s capabilities. Undo puts them back.', count( $recommendation['lost'] ), 'role-right-sizer' ),
+					$user->display_name,
+					$user->user_login,
+					Screen::roles_label( $recommendation['current'] ),
+					Screen::role_label( $recommendation['proposed'] ),
+					number_format_i18n( count( $recommendation['lost'] ) )
+				),
+				'object'  => array(
+					'type'  => 'user',
+					'id'    => $user->ID,
+					'label' => $user->display_name,
+					'url'   => (string) get_edit_user_link( $user->ID ),
+				),
+				'changes' => array(
+					array(
+						'field'  => __( 'Role', 'role-right-sizer' ),
+						'before' => Screen::roles_label( $recommendation['current'] ),
+						'after'  => Screen::role_label( $recommendation['proposed'] ),
+					),
+					array(
+						'field'  => __( 'Capabilities lost', 'role-right-sizer' ),
+						'before' => '',
+						'after'  => implode( ', ', $recommendation['lost'] ),
+					),
+				),
+			);
+		}
+
+		$role = (string) ( $input['role'] ?? '' );
+		$cap  = (string) ( $input['capability'] ?? '' );
+		if ( '' === $role || '' === $cap ) {
+			return array( 'summary' => __( 'Pass user_id, or role and capability.', 'role-right-sizer' ) );
+		}
+		if ( in_array( $role, Recommender::protected_roles(), true ) ) {
+			return array( 'summary' => __( 'Capabilities are never removed from the administrator role or a role that can manage options, so this call will fail.', 'role-right-sizer' ) );
+		}
+
+		$owner = '';
+		foreach ( $this->report->roles() as $recommendation ) {
+			if ( $recommendation['role'] === $role && $recommendation['cap'] === $cap ) {
+				$owner = Screen::owner_label( is_array( $recommendation['owner'] ?? null ) ? $recommendation['owner'] : null );
+			}
+		}
+
+		return array(
+			'summary' => trim(
+				sprintf(
+					/* translators: 1: capability, 2: role. */
+					__( 'Removes %1$s from the %2$s role, for everyone with the role. Undo puts it back.', 'role-right-sizer' ),
+					$cap,
+					Screen::role_label( $role )
+				) . ' ' . $owner
+			),
+			'changes' => array(
+				array(
+					/* translators: %s: role. */
+					'field'  => sprintf( __( 'Capabilities of %s', 'role-right-sizer' ), Screen::role_label( $role ) ),
+					'before' => $cap,
+					'after'  => '',
+				),
+			),
+		);
+	}
+
+	/**
+	 * Preview of undo-change.
+	 *
+	 * @param array $input Ability input.
+	 * @return array
+	 */
+	private function preview_undo( array $input ): array {
+		$change = $this->changes->get( (int) ( $input['change_id'] ?? 0 ) );
+		if ( ! $change ) {
+			return array( 'summary' => __( 'That change is not in the log, so this call will fail.', 'role-right-sizer' ) );
+		}
+
+		$list = ! empty( $input['batch'] ) ? $this->changes->batch( (int) $change['batch'] ) : array( $change );
+		$rows = array();
+		foreach ( $list as $item ) {
+			if ( $item['undone'] ) {
+				continue;
+			}
+			if ( 'unused_cap' === $item['kind'] ) {
+				$rows[] = array(
+					/* translators: %s: role. */
+					'field'  => sprintf( __( 'Capabilities of %s', 'role-right-sizer' ), Screen::role_label( (string) $item['role'] ) ),
+					'before' => '',
+					'after'  => (string) $item['cap'],
+				);
+			} else {
+				$user   = get_userdata( (int) $item['user_id'] );
+				$rows[] = array(
+					/* translators: %s: user name. */
+					'field'  => sprintf( __( 'Role of %s', 'role-right-sizer' ), $user ? $user->display_name : (string) $item['login'] ),
+					'before' => Screen::roles_label( $user ? array_values( (array) $user->roles ) : (array) $item['after'] ),
+					'after'  => Screen::roles_label( (array) $item['before'] ),
+				);
+			}
+		}
+
+		if ( ! $rows ) {
+			return array( 'summary' => __( 'That change was already undone, so this call will fail.', 'role-right-sizer' ) );
+		}
+
+		return array(
+			/* translators: %s: number of changes. */
+			'summary' => sprintf( _n( 'Undoes %s Role Right-Sizer change and puts back what it took away.', 'Undoes %s Role Right-Sizer changes and puts back what they took away.', count( $rows ), 'role-right-sizer' ), number_format_i18n( count( $rows ) ) ),
+			'changes' => $rows,
+		);
 	}
 
 	/**

@@ -53,6 +53,13 @@ final class Plugin {
 	private Recorder $recorder;
 
 	/**
+	 * When each role gained each capability.
+	 *
+	 * @var CapabilityHistory
+	 */
+	private CapabilityHistory $history;
+
+	/**
 	 * Works out recommendations.
 	 *
 	 * @var Recommender
@@ -100,10 +107,13 @@ final class Plugin {
 	}
 
 	/**
-	 * Starts tracking on activation.
+	 * Starts tracking on activation, and notes the capabilities every role has
+	 * now, so the ones plugins add later count as new.
 	 */
 	public static function activate(): void {
-		( new Settings() )->tracking_started();
+		$settings = new Settings();
+		$settings->tracking_started();
+		( new CapabilityHistory( $settings ) )->current();
 	}
 
 	/**
@@ -121,8 +131,9 @@ final class Plugin {
 		$this->settings    = new Settings();
 		$this->store       = new Store();
 		$this->recorder    = new Recorder( $this->store, $this->settings, new HookMap() );
+		$this->history     = new CapabilityHistory( $this->settings );
 		$this->recommender = new Recommender( $this->settings, $this->store );
-		$this->report      = new Report( $this->settings, $this->recommender, $this->store );
+		$this->report      = new Report( $this->settings, $this->recommender, $this->store, $this->history );
 		$this->changes     = new Changes();
 		$this->applier     = new Applier( $this->settings, $this->recommender, $this->report, $this->changes );
 	}
@@ -152,6 +163,15 @@ final class Plugin {
 	 */
 	public function recorder(): Recorder {
 		return $this->recorder;
+	}
+
+	/**
+	 * When each role gained each capability.
+	 *
+	 * @return CapabilityHistory
+	 */
+	public function history(): CapabilityHistory {
+		return $this->history;
 	}
 
 	/**
@@ -198,6 +218,7 @@ final class Plugin {
 
 		$services = array(
 			$this->recorder,
+			$this->history,
 			new AdminScreens( $this->recorder ),
 			new RestWatcher( $this->recorder ),
 			$this->report,

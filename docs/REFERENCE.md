@@ -40,7 +40,14 @@ Recommendations stay hidden until tracking has run for the learning period (30 d
 - **Smaller role** (`downgrade`): the role with the fewest capabilities that covers everything the user used. It only counts roles whose capabilities the user already has, so a recommendation never gives more access, and a role without `read` never replaces one with it. Roles are compared by how many capabilities they grant; equal sizes keep the site's order.
 - **Dormant** (`dormant`): no login or activity for 90 days. The recommendation is no role on this site, or the fallback role from the settings screen. A fallback role that gives more than the user has now is skipped.
 - **Never logged in** (`never`): no login or activity since tracking began, or since the account was created if that was later, once the learning period has passed since then.
-- **Unused capability on a role** (`unused_cap`): a capability a role grants that no user with that role used in the window. Core capabilities are never suggested, only the ones plugins and custom roles add.
+- **Unused capability on a role** (`unused_cap`): a capability a role grants that no user with that role used in the window. Core capabilities are never suggested, only the ones plugins and custom roles add. On top of that:
+  - Protected roles are skipped: `administrator` and every role that grants `manage_options` (`role_right_sizer_protected_roles`). Plugins put their own screens behind capabilities on those roles, and removing one can lock every administrator out. Users with these roles still get a smaller role when they qualify.
+  - A capability only counts once it has been on the role since the start of the window, or since tracking began if that is later, and for at least a whole learning period. One a plugin added last week never had the chance to be used. The capability history below records when each role gained each capability. A capability put back with Undo counts from that moment too, so a suggestion you undid does not come back for a whole window.
+  - Each one says who it belongs to, when that can be told: the plugin that added it (read from the call stack when the role changed), a registered post type or taxonomy that checks it, or an active plugin whose folder name is in the capability name (`manage_woocommerce`). Filter it with `role_right_sizer_capability_owner`. The screen groups them by role and owner, and `apply --all` leaves the ones of an active owner alone unless you add `--include-plugin-caps`.
+
+Site Health only makes it a security recommendation when accounts have more access than they use. Leftover capabilities on roles are mentioned as housekeeping: a capability no code checks grants nothing. Capabilities of an active owner are not counted.
+
+The screen also says how many accounts it did not check and why: accounts that have not logged in yet but are younger than the learning period are not flagged yet, and accounts with nothing beyond `read` have nothing to make smaller (`role_right_sizer_skipped_lines`).
 
 Never touched: users and roles on the exclude list, super admins on multisite, your own account, and the last administrator (the last user with a role that grants `manage_options`). Capabilities granted straight to a user, not through a role, are left alone.
 
@@ -65,6 +72,10 @@ The report is built 100 users at a time. A build runs up to 20 batches in the re
 | `role_right_sizer_excluded_users` | filter | `( int[] $user_ids )`. Users never to touch. Default the list on the settings screen |
 | `role_right_sizer_excluded_roles` | filter | `( string[] $roles )`. Roles never to touch: their users keep them, and the role keeps its capabilities |
 | `role_right_sizer_core_capabilities` | filter | `( string[] $caps )`. Capabilities never suggested for removal from a role. Default every capability core gives its own roles |
+| `role_right_sizer_protected_roles` | filter | `( string[] $roles )`. Roles whose capabilities are never suggested for removal. Default `administrator` and every role that grants `manage_options`. Return fewer to have their unused capabilities listed too. Applying is checked against it again |
+| `role_right_sizer_capability_owner` | filter | `( array\|null $owner, string $cap, string $role )`. Who a capability on a role belongs to: `name`, `active`, and optionally `type` and `id`. Return null when unknown. Active owners are marked and left out of `apply --all` |
+| `role_right_sizer_skipped_lines` | filter | `( string[] $lines, array $report )`. The lines under the toolbar that say which accounts were not checked and why |
+| `role_right_sizer_site_health_result` | filter | `( array $result )`. The Site Health result. A `status` other than good, recommended or critical is ignored |
 | `role_right_sizer_recommendation` | filter | `( array $recommendation, WP_User $user )`. Return null to drop it, or change `proposed` to another role. The lost capabilities are worked out again, and the last administrator check still runs after it |
 | `role_right_sizer_build_batch_size` | filter | `( int $size )`. Users per batch of the report build. Default 100, 10 to 500 |
 | `role_right_sizer_log_size` | filter | `( int $size )`. Changes the log keeps. Default 500, 10 to 5000 |
@@ -97,7 +108,18 @@ add_action( 'role_right_sizer_applied', function ( $change ) {
 
 A change is an array with `id`, `batch`, `time`, `by` (user ID, 0 for WP-CLI), `kind` (`downgrade`, `dormant`, `never` or `unused_cap`), `lost`, `undone`, and either `user_id`, `login`, `before` and `after` (role lists) or `role` and `cap`.
 
-There is no plugin JavaScript, so there are no JavaScript hooks. Select all on the tables is core's own list table script.
+### JavaScript hooks
+
+The recommendations screen has a small script for the review bar and the group checkboxes. Its hooks go through `wp.hooks` and are read on each use, so a script loaded later can add them. Select all on the tables is core's own list table script.
+
+| Hook | Type | Use |
+| --- | --- | --- |
+| `roleRightSizer.reviewLabel` | filter | `( label, count, form )`. The text of the review button for this many selected changes |
+| `roleRightSizer.selectionChanged` | action | `( count, form )`. What is ticked changed |
+
+```js
+wp.hooks.addFilter( 'roleRightSizer.reviewLabel', 'my-plugin', ( label, count ) => ( count > 20 ? label + ' (that is a lot)' : label ) );
+```
 
 ## Abilities
 
@@ -105,10 +127,12 @@ On WordPress 6.9 and later, Role Right-Sizer registers [abilities](https://devel
 
 | Ability | Does |
 | --- | --- |
-| `role-right-sizer/get-recommendations` | Read-only. `learning`, `learning_ends`, `built`, the user recommendations (`login`, `type`, `current`, `proposed`, `lost`, `last_active`) and the unused capabilities on roles |
+| `role-right-sizer/get-recommendations` | Read-only. `learning`, `learning_ends`, `built`, the user recommendations (`login`, `type`, `current`, `proposed`, `lost`, `last_active`) and the unused capabilities on roles (`role`, `cap`, `users`, `owner`, `owner_active`) |
 | `role-right-sizer/get-user-usage` | Read-only. For `user` (ID, username or email): every capability and ability with first and last use and whether it is in the window, last login and activity, and the recommendation |
 | `role-right-sizer/apply-recommendation` | Destructive, so the REST API runs it with `POST`. Applies the recommendation for `user_id`, or removes `capability` from `role`. Returns the logged change. Refused (400) for your own account, the last administrator and the exclude list |
 | `role-right-sizer/undo-change` | Destructive. Undoes `change_id`, or its whole batch with `batch: true` |
+
+When [Agent Governance](https://github.com/aryanjasala/agent-governance) holds an agent's call to `apply-recommendation` or `undo-change`, Role Right-Sizer fills in its preview through `agent_governance_dry_run`: who moves from which role to which, the capabilities lost, or what an undo puts back. Nothing changes while the preview is built.
 
 ## WP-CLI
 
@@ -116,13 +140,13 @@ On WordPress 6.9 and later, Role Right-Sizer registers [abilities](https://devel
 wp role-right-sizer report [--all-users] [--cached] [--format=table|csv|json|yaml|count]
 wp role-right-sizer usage <user> [--format=...]
 wp role-right-sizer apply <user>... [--dry-run]
-wp role-right-sizer apply --all [--dry-run] [--yes]
+wp role-right-sizer apply --all [--include-plugin-caps] [--dry-run] [--yes]
 wp role-right-sizer changes [--format=...]
 wp role-right-sizer undo <change-id> [--batch]
 wp role-right-sizer forget <user>
 ```
 
-`report` builds the recommendations first unless `--cached` is given. `--all-users` lists every user in the columns of the CSV download. `apply --all` applies every user and role recommendation as one batch. Users can be IDs, usernames or email addresses. WP-CLI runs without a logged-in user unless you pass `--user`, so the "not your own account" rule only applies with `--user`. The last administrator rule always applies.
+`report` builds the recommendations first unless `--cached` is given. `--all-users` lists every user in the columns of the CSV download. `report` lists unused capabilities with their `owner` and `owner_active`. `apply --all` applies every user and role recommendation as one batch, except capabilities that belong to an active plugin, post type or taxonomy; it names those and leaves them alone unless you add `--include-plugin-caps`. Users can be IDs, usernames or email addresses. WP-CLI runs without a logged-in user unless you pass `--user`, so the "not your own account" rule only applies with `--user`. The last administrator rule always applies.
 
 Settings live in the `role_right_sizer_settings` option: `wp option update role_right_sizer_settings '{"dormant_action":"fallback","fallback_role":"subscriber","excluded_users":[],"excluded_roles":[]}' --format=json`.
 
@@ -135,6 +159,7 @@ $plugin->recorder()->record( 'edit_shop_orders', $user_id, 'my-plugin' ); // cou
 $plugin->store()->usage( $user_id );            // [ cap => [ first_used, last_used, count ] ]
 $plugin->report()->rebuild();                   // build now, the rest in the background
 $plugin->report()->users();                     // the user recommendations
+$plugin->history()->current();                  // [ role => [ cap => [ first_seen, plugin_folder ] ] ]
 $plugin->applier()->apply_many( array( 12 ), array( 'shop_editor|view_reports' ) ); // [ 'batch', 'changes', 'errors' ]
 $plugin->applier()->undo_batch( $batch );
 ```
@@ -151,6 +176,7 @@ $plugin->applier()->undo_batch( $batch );
 | `role_right_sizer_settings` option | Dormant action, fallback role, excluded users and roles |
 | `role_right_sizer_report` option | The last report and the state of a build in progress |
 | `role_right_sizer_changes` option | The change log, newest first, at most 500 changes |
+| `role_right_sizer_capability_history` option | When each role gained each capability, and the plugin folder that added it when known: `role => [ cap => [ first_seen, folder ] ]`. Updated when the roles change and on every report build. Not autoloaded |
 
 `{prefix}` is the site's table prefix, such as `wp_` or `wp_2_`. The cron events are `role_right_sizer_daily` and `role_right_sizer_build`. Deactivating stops them. Uninstalling removes all of the above on every site of a network. Roles and capabilities stay as they are: applied changes are not undone.
 

@@ -153,26 +153,31 @@ final class Command {
 		foreach ( $recommendations as $recommendation ) {
 			$user   = get_userdata( (int) $recommendation['user_id'] );
 			$rows[] = array(
-				'type'        => $recommendation['type'],
-				'target'      => $user ? $user->user_login : '#' . $recommendation['user_id'],
-				'current'     => implode( ', ', (array) $recommendation['current'] ),
-				'proposed'    => '' === $recommendation['proposed'] ? 'none' : $recommendation['proposed'],
-				'lost'        => implode( ', ', (array) $recommendation['lost'] ),
-				'last_active' => self::date( max( (int) $recommendation['last_active'], (int) $recommendation['last_login'] ) ),
+				'type'         => $recommendation['type'],
+				'target'       => $user ? $user->user_login : '#' . $recommendation['user_id'],
+				'current'      => implode( ', ', (array) $recommendation['current'] ),
+				'proposed'     => '' === $recommendation['proposed'] ? 'none' : $recommendation['proposed'],
+				'lost'         => implode( ', ', (array) $recommendation['lost'] ),
+				'last_active'  => self::date( max( (int) $recommendation['last_active'], (int) $recommendation['last_login'] ) ),
+				'owner'        => '',
+				'owner_active' => '',
 			);
 		}
 		foreach ( $this->settings->is_learning() ? array() : $this->report->roles() as $recommendation ) {
+			$owner  = is_array( $recommendation['owner'] ?? null ) ? $recommendation['owner'] : null;
 			$rows[] = array(
-				'type'        => 'unused_cap',
-				'target'      => $recommendation['role'],
-				'current'     => $recommendation['role'],
-				'proposed'    => $recommendation['role'],
-				'lost'        => $recommendation['cap'],
-				'last_active' => '',
+				'type'         => 'unused_cap',
+				'target'       => $recommendation['role'],
+				'current'      => $recommendation['role'],
+				'proposed'     => $recommendation['role'],
+				'lost'         => $recommendation['cap'],
+				'last_active'  => '',
+				'owner'        => $owner ? (string) $owner['name'] : '',
+				'owner_active' => $owner ? ( Report::has_active_owner( $recommendation ) ? 'yes' : 'no' ) : '',
 			);
 		}
 
-		\WP_CLI\Utils\format_items( $format, $rows, array( 'type', 'target', 'current', 'proposed', 'lost', 'last_active' ) );
+		\WP_CLI\Utils\format_items( $format, $rows, array( 'type', 'target', 'current', 'proposed', 'lost', 'last_active', 'owner', 'owner_active' ) );
 	}
 
 	/**
@@ -230,7 +235,10 @@ final class Command {
 	 * : User IDs, usernames or email addresses.
 	 *
 	 * [--all]
-	 * : Apply every recommendation, for users and roles, as one batch.
+	 * : Apply every recommendation, for users and roles, as one batch. Capabilities that belong to an active plugin are left out.
+	 *
+	 * [--include-plugin-caps]
+	 * : With --all, also remove unused capabilities that belong to an active plugin.
 	 *
 	 * [--dry-run]
 	 * : Show what would change without changing anything.
@@ -242,6 +250,7 @@ final class Command {
 	 *
 	 *     wp role-right-sizer apply pat
 	 *     wp role-right-sizer apply --all --dry-run
+	 *     wp role-right-sizer apply --all --include-plugin-caps --yes
 	 *
 	 * @param array $args       Positional arguments.
 	 * @param array $assoc_args Named arguments.
@@ -251,14 +260,21 @@ final class Command {
 			\WP_CLI::error( sprintf( 'Still learning: recommendations show up on %s.', gmdate( 'Y-m-d', $this->settings->learning_ends() ) ) );
 		}
 
-		$all  = ! empty( $assoc_args['all'] );
-		$ids  = array();
-		$caps = array();
+		$all     = ! empty( $assoc_args['all'] );
+		$plugins = ! empty( $assoc_args['include-plugin-caps'] );
+		$ids     = array();
+		$caps    = array();
+		$skipped = array();
 		if ( $all ) {
 			$this->report->rebuild( 0 );
 			$ids = array_map( 'intval', array_keys( $this->report->get()['users'] ) );
 			foreach ( $this->report->roles() as $recommendation ) {
-				$caps[] = $recommendation['role'] . '|' . $recommendation['cap'];
+				$pair = $recommendation['role'] . '|' . $recommendation['cap'];
+				if ( ! $plugins && Report::has_active_owner( $recommendation ) ) {
+					$skipped[ $pair ] = (string) $recommendation['owner']['name'];
+					continue;
+				}
+				$caps[] = $pair;
 			}
 		} elseif ( $args ) {
 			foreach ( $args as $key ) {
@@ -266,6 +282,10 @@ final class Command {
 			}
 		} else {
 			\WP_CLI::error( 'Name at least one user, or use --all.' );
+		}
+
+		foreach ( $skipped as $pair => $owner ) {
+			\WP_CLI::line( sprintf( 'Role %s: left %s alone. It belongs to %s, which is active. Add --include-plugin-caps to remove it too.', ...array_merge( explode( '|', $pair, 2 ), array( $owner ) ) ) );
 		}
 
 		if ( ! $ids && ! $caps ) {

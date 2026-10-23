@@ -1,7 +1,7 @@
 <?php
 /**
- * Removes Role Right-Sizer's settings, report, change log, background jobs
- * and every user's recorded usage, on every site.
+ * Removes Role Right-Sizer's settings, report, change log, capability history,
+ * background jobs and every user's recorded usage, on every site.
  *
  * Roles and capabilities stay as they are: changes you applied are not undone.
  *
@@ -16,7 +16,7 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 function role_right_sizer_uninstall_site(): void {
 	global $wpdb;
 
-	foreach ( array( 'role_right_sizer_settings', 'role_right_sizer_tracking_started', 'role_right_sizer_report', 'role_right_sizer_changes' ) as $role_right_sizer_option ) {
+	foreach ( array( 'role_right_sizer_settings', 'role_right_sizer_tracking_started', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history' ) as $role_right_sizer_option ) {
 		delete_option( $role_right_sizer_option );
 	}
 

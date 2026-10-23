@@ -8,6 +8,7 @@
 
 namespace AryanX\RoleRightSizer\Tests\Unit;
 
+use AryanX\RoleRightSizer\CapabilityHistory;
 use AryanX\RoleRightSizer\Settings;
 use Brain\Monkey\Functions;
 
@@ -181,6 +182,11 @@ abstract class PluginTestCase extends TestCase {
 				return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) );
 			}
 		);
+		// Nothing installed or registered unless a test says so.
+		Functions\when( 'get_plugins' )->justReturn( array() );
+		Functions\when( 'get_post_types' )->justReturn( array() );
+		Functions\when( 'get_taxonomies' )->justReturn( array() );
+		Functions\when( 'get_site_option' )->justReturn( array() );
 		Functions\when( 'wp_clear_scheduled_hook' )->justReturn( 0 );
 		Functions\when( 'wp_next_scheduled' )->justReturn( false );
 		Functions\when( 'wp_schedule_single_event' )->justReturn( true );
@@ -258,6 +264,22 @@ abstract class PluginTestCase extends TestCase {
 			$record[ $cap ] = array( $time, $time, 1 );
 		}
 		$this->meta[ $user_id ]['wp_role_right_sizer_usage'] = $record;
+	}
+
+	/**
+	 * Says a role has had some capabilities for a number of days, in the capability history.
+	 *
+	 * @param string   $role   Role name.
+	 * @param string[] $caps   Capabilities.
+	 * @param int      $days   Days on the role.
+	 * @param string   $folder Plugin folder that added them.
+	 */
+	protected function had( string $role, array $caps, int $days, string $folder = '' ): void {
+		$history = $this->options[ CapabilityHistory::OPTION ] ?? array();
+		foreach ( $caps as $cap ) {
+			$history[ $role ][ $cap ] = array( time() - $days * DAY_IN_SECONDS, $folder );
+		}
+		$this->options[ CapabilityHistory::OPTION ] = $history;
 	}
 
 	/**

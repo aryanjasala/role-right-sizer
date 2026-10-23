@@ -11,7 +11,7 @@ const PEOPLE = [
 	[ 'nina', 'Nina Shah', 'editor' ],
 ];
 
-const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes' ];
+const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history' ];
 
 function clean() {
 	for ( const option of OPTIONS ) {
@@ -58,6 +58,14 @@ function seed( trackingDays = 120 ) {
 
 	wpEval( `
 		update_option( 'role_right_sizer_tracking_started', time() - ${ trackingDays } * DAY_IN_SECONDS );
+		// Every role has had its capabilities since tracking began.
+		$history = AryanX\\RoleRightSizer\\Plugin::instance()->history()->current();
+		foreach ( $history as $role => $caps ) {
+			foreach ( array_keys( $caps ) as $cap ) {
+				$history[ $role ][ $cap ][0] = time() - ${ trackingDays } * DAY_IN_SECONDS;
+			}
+		}
+		update_option( 'role_right_sizer_capability_history', $history, false );
 		$usage  = json_decode( '${ JSON.stringify( usage ) }', true );
 		$active = json_decode( '${ JSON.stringify( lastActive ) }', true );
 		foreach ( $usage as $login => $caps ) {
