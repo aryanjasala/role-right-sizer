@@ -2,10 +2,10 @@
 /**
  * Base class for unit tests.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
 use Brain\Monkey;
 use Brain\Monkey\Functions;

@@ -2,12 +2,12 @@
 /**
  * Counts what REST requests and abilities really used.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Usage;
+namespace AryanX\Axle\RoleRightSizer\Usage;
 
-use AryanX\RoleRightSizer\Service;
+use AryanX\Axle\RoleRightSizer\Service;
 
 defined( 'ABSPATH' ) || exit;
 

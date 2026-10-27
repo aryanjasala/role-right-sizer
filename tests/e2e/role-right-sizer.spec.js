@@ -72,7 +72,7 @@ const reset = () => {
 	trackingStarted( 0 );
 	// The test admin has used the screen and settings for a while, like a real one would have.
 	wpEval( `foreach ( array( 'role_right_sizer_usage', 'role_right_sizer_abilities', 'role_right_sizer_last_active' ) as $key ) { delete_user_option( 1, $key ); }
-		AryanX\\RoleRightSizer\\Plugin::instance()->store()->add_usage( 1, array( 'promote_users', 'manage_options', 'activate_plugins', 'list_users' ), time(), 3600 );
+		AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->store()->add_usage( 1, array( 'promote_users', 'manage_options', 'activate_plugins', 'list_users' ), time(), 3600 );
 		update_user_option( 1, 'role_right_sizer_last_active', time() );` );
 };
 

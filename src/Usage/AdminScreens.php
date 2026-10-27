@@ -2,13 +2,13 @@
 /**
  * Counts an admin screen visit as use of the capability its menu entry needs.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Usage;
+namespace AryanX\Axle\RoleRightSizer\Usage;
 
-use AryanX\RoleRightSizer\Service;
-use AryanX\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Service;
+use AryanX\Axle\RoleRightSizer\Settings;
 
 defined( 'ABSPATH' ) || exit;
 

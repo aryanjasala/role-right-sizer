@@ -2,13 +2,13 @@
 /**
  * Abilities: recommendations and changes for AI agents and other Abilities API clients.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
-use AryanX\RoleRightSizer\Admin\Screen;
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\Admin\Screen;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 
 defined( 'ABSPATH' ) || exit;
 

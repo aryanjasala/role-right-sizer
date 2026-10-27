@@ -2,10 +2,10 @@
 /**
  * Where usage is kept: user meta, per site.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Usage;
+namespace AryanX\Axle\RoleRightSizer\Usage;
 
 defined( 'ABSPATH' ) || exit;
 

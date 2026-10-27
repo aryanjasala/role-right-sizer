@@ -2,12 +2,12 @@
 /**
  * Tests for how usage is stored and throttled.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 
 final class StoreTest extends PluginTestCase {
 

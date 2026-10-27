@@ -2,12 +2,12 @@
 /**
  * The saved list of recommendations, built in batches.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 
 defined( 'ABSPATH' ) || exit;
 

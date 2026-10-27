@@ -25,12 +25,12 @@
   },
   "autoload": {
     "psr-4": {
-      "AryanX\\RoleRightSizer\\": "src/"
+      "AryanX\\Axle\\RoleRightSizer\\": "src/"
     }
   },
   "autoload-dev": {
     "psr-4": {
-      "AryanX\\RoleRightSizer\\Tests\\": "tests/"
+      "AryanX\\Axle\\RoleRightSizer\\Tests\\": "tests/"
     }
   },
   "config": {

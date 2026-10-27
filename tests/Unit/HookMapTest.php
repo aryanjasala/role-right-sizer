@@ -2,12 +2,12 @@
 /**
  * Tests for working out the capability each WordPress event proves.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
-use AryanX\RoleRightSizer\Usage\HookMap;
+use AryanX\Axle\RoleRightSizer\Usage\HookMap;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 

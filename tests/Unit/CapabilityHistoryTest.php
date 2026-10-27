@@ -2,14 +2,14 @@
 /**
  * Tests for when roles gained capabilities, and who a capability belongs to.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
-use AryanX\RoleRightSizer\CapabilityHistory;
-use AryanX\RoleRightSizer\CapabilityOwners;
-use AryanX\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\CapabilityHistory;
+use AryanX\Axle\RoleRightSizer\CapabilityOwners;
+use AryanX\Axle\RoleRightSizer\Settings;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 

@@ -2,12 +2,12 @@
 /**
  * Tests for the settings, the tracking start and the filtered limits.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
-use AryanX\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Settings;
 use Brain\Monkey\Filters;
 
 final class SettingsTest extends PluginTestCase {

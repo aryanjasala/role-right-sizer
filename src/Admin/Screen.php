@@ -2,21 +2,21 @@
 /**
  * Users > Right-Sizer.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Admin;
+namespace AryanX\Axle\RoleRightSizer\Admin;
 
-use AryanX\RoleRightSizer\Applier;
-use AryanX\RoleRightSizer\CapabilityOwners;
-use AryanX\RoleRightSizer\Changes;
-use AryanX\RoleRightSizer\Recommender;
-use AryanX\RoleRightSizer\Report;
-use AryanX\RoleRightSizer\Service;
-use AryanX\RoleRightSizer\Settings;
-use AryanX\RoleRightSizer\Usage\Store;
-use const AryanX\RoleRightSizer\PLUGIN_FILE;
-use const AryanX\RoleRightSizer\VERSION;
+use AryanX\Axle\RoleRightSizer\Applier;
+use AryanX\Axle\RoleRightSizer\CapabilityOwners;
+use AryanX\Axle\RoleRightSizer\Changes;
+use AryanX\Axle\RoleRightSizer\Recommender;
+use AryanX\Axle\RoleRightSizer\Report;
+use AryanX\Axle\RoleRightSizer\Service;
+use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
+use const AryanX\Axle\RoleRightSizer\PLUGIN_FILE;
+use const AryanX\Axle\RoleRightSizer\VERSION;
 
 defined( 'ABSPATH' ) || exit;
 

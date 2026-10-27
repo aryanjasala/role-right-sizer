@@ -3,13 +3,13 @@
  * Base class for Role Right-Sizer's unit tests: a small site with core's roles,
  * users and user meta kept in memory.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
-use AryanX\RoleRightSizer\CapabilityHistory;
-use AryanX\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\CapabilityHistory;
+use AryanX\Axle\RoleRightSizer\Settings;
 use Brain\Monkey\Functions;
 
 require_once dirname( __DIR__ ) . '/Doubles/wordpress.php';
