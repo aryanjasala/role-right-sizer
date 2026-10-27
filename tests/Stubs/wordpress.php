@@ -2,7 +2,7 @@
 /**
  * Minimal stand-ins for WordPress classes and constants used in unit tests.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
 // phpcs:ignoreFile

@@ -3,18 +3,18 @@
  * Tests for the screen's capability, the CSV and the exclude list parsing,
  * the network screen and Site Health.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
-use AryanX\RoleRightSizer\Admin\NetworkScreen;
-use AryanX\RoleRightSizer\Admin\Screen;
-use AryanX\RoleRightSizer\Health\SiteHealth;
-use AryanX\RoleRightSizer\Recommender;
-use AryanX\RoleRightSizer\Report;
-use AryanX\RoleRightSizer\Settings;
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\Admin\NetworkScreen;
+use AryanX\Axle\RoleRightSizer\Admin\Screen;
+use AryanX\Axle\RoleRightSizer\Health\SiteHealth;
+use AryanX\Axle\RoleRightSizer\Recommender;
+use AryanX\Axle\RoleRightSizer\Report;
+use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 

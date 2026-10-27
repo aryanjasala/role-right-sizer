@@ -2,20 +2,20 @@
 /**
  * Plugin bootstrap.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
-use AryanX\RoleRightSizer\Admin\NetworkScreen;
-use AryanX\RoleRightSizer\Admin\Screen;
-use AryanX\RoleRightSizer\Cli\Command;
-use AryanX\RoleRightSizer\Health\SiteHealth;
-use AryanX\RoleRightSizer\Usage\AdminScreens;
-use AryanX\RoleRightSizer\Usage\HookMap;
-use AryanX\RoleRightSizer\Usage\Recorder;
-use AryanX\RoleRightSizer\Usage\RestWatcher;
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\Admin\NetworkScreen;
+use AryanX\Axle\RoleRightSizer\Admin\Screen;
+use AryanX\Axle\RoleRightSizer\Cli\Command;
+use AryanX\Axle\RoleRightSizer\Health\SiteHealth;
+use AryanX\Axle\RoleRightSizer\Usage\AdminScreens;
+use AryanX\Axle\RoleRightSizer\Usage\HookMap;
+use AryanX\Axle\RoleRightSizer\Usage\Recorder;
+use AryanX\Axle\RoleRightSizer\Usage\RestWatcher;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 
 defined( 'ABSPATH' ) || exit;
 

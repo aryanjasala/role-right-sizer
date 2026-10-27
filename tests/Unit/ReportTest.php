@@ -2,16 +2,16 @@
 /**
  * Tests for building the report in batches.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
-use AryanX\RoleRightSizer\CapabilityHistory;
-use AryanX\RoleRightSizer\Recommender;
-use AryanX\RoleRightSizer\Report;
-use AryanX\RoleRightSizer\Settings;
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\CapabilityHistory;
+use AryanX\Axle\RoleRightSizer\Recommender;
+use AryanX\Axle\RoleRightSizer\Report;
+use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 use Brain\Monkey\Actions;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;

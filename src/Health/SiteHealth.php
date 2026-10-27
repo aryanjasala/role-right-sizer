@@ -2,15 +2,15 @@
 /**
  * Site Health check.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Health;
+namespace AryanX\Axle\RoleRightSizer\Health;
 
-use AryanX\RoleRightSizer\Admin\Screen;
-use AryanX\RoleRightSizer\Report;
-use AryanX\RoleRightSizer\Service;
-use AryanX\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Admin\Screen;
+use AryanX\Axle\RoleRightSizer\Report;
+use AryanX\Axle\RoleRightSizer\Service;
+use AryanX\Axle\RoleRightSizer\Settings;
 
 defined( 'ABSPATH' ) || exit;
 

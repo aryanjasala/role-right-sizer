@@ -153,7 +153,7 @@ Settings live in the `role_right_sizer_settings` option: `wp option update role_
 ## PHP API
 
 ```php
-$plugin = AryanX\RoleRightSizer\Plugin::instance();
+$plugin = AryanX\Axle\RoleRightSizer\Plugin::instance();
 
 $plugin->recorder()->record( 'edit_shop_orders', $user_id, 'my-plugin' ); // count a capability as used now
 $plugin->store()->usage( $user_id );            // [ cap => [ first_used, last_used, count ] ]

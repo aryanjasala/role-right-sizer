@@ -2,19 +2,19 @@
 /**
  * `wp role-right-sizer` commands.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Cli;
+namespace AryanX\Axle\RoleRightSizer\Cli;
 
-use AryanX\RoleRightSizer\Abilities;
-use AryanX\RoleRightSizer\Admin\Screen;
-use AryanX\RoleRightSizer\Applier;
-use AryanX\RoleRightSizer\Changes;
-use AryanX\RoleRightSizer\Recommender;
-use AryanX\RoleRightSizer\Report;
-use AryanX\RoleRightSizer\Settings;
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\Abilities;
+use AryanX\Axle\RoleRightSizer\Admin\Screen;
+use AryanX\Axle\RoleRightSizer\Applier;
+use AryanX\Axle\RoleRightSizer\Changes;
+use AryanX\Axle\RoleRightSizer\Recommender;
+use AryanX\Axle\RoleRightSizer\Report;
+use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 
 defined( 'ABSPATH' ) || exit;
 

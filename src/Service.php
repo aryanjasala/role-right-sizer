@@ -2,10 +2,10 @@
 /**
  * Contract for classes that hook into WordPress.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
 defined( 'ABSPATH' ) || exit;
 

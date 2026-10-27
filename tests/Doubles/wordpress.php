@@ -3,7 +3,7 @@
  * Stand-ins for the WordPress user and role classes Role Right-Sizer works with.
  * The shared stubs in tests/Stubs come from the repo template; these are this plugin's own.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
 // phpcs:ignoreFile

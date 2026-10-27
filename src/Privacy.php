@@ -2,12 +2,12 @@
 /**
  * Personal data export, erasure and privacy policy text.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 
 defined( 'ABSPATH' ) || exit;
 

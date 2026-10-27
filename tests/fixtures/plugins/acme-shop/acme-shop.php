@@ -4,7 +4,7 @@
  * which plugin added a capability, so the call has to come from a file inside
  * a plugins folder.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
 // phpcs:ignoreFile

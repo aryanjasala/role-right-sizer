@@ -2,10 +2,10 @@
 /**
  * Who a capability on a role belongs to.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
 defined( 'ABSPATH' ) || exit;
 

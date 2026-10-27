@@ -2,10 +2,10 @@
 /**
  * The log of changes Role Right-Sizer made, kept for Undo.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
 defined( 'ABSPATH' ) || exit;
 

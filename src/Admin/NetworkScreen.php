@@ -2,15 +2,15 @@
 /**
  * Network Admin > Users > Right-Sizer: super admins' activity, read-only.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Admin;
+namespace AryanX\Axle\RoleRightSizer\Admin;
 
-use AryanX\RoleRightSizer\Service;
-use AryanX\RoleRightSizer\Usage\Store;
-use const AryanX\RoleRightSizer\PLUGIN_FILE;
-use const AryanX\RoleRightSizer\VERSION;
+use AryanX\Axle\RoleRightSizer\Service;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
+use const AryanX\Axle\RoleRightSizer\PLUGIN_FILE;
+use const AryanX\Axle\RoleRightSizer\VERSION;
 
 defined( 'ABSPATH' ) || exit;
 

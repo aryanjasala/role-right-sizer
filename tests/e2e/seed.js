@@ -59,7 +59,7 @@ function seed( trackingDays = 120 ) {
 	wpEval( `
 		update_option( 'role_right_sizer_tracking_started', time() - ${ trackingDays } * DAY_IN_SECONDS );
 		// Every role has had its capabilities since tracking began.
-		$history = AryanX\\RoleRightSizer\\Plugin::instance()->history()->current();
+		$history = AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->history()->current();
 		foreach ( $history as $role => $caps ) {
 			foreach ( array_keys( $caps ) as $cap ) {
 				$history[ $role ][ $cap ][0] = time() - ${ trackingDays } * DAY_IN_SECONDS;

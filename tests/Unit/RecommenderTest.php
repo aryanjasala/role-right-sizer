@@ -2,14 +2,14 @@
 /**
  * Tests for working out the smallest role each user needs.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer\Tests\Unit;
+namespace AryanX\Axle\RoleRightSizer\Tests\Unit;
 
-use AryanX\RoleRightSizer\Recommender;
-use AryanX\RoleRightSizer\Settings;
-use AryanX\RoleRightSizer\Usage\Store;
+use AryanX\Axle\RoleRightSizer\Recommender;
+use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Usage\Store;
 use Brain\Monkey\Filters;
 
 final class RecommenderTest extends PluginTestCase {

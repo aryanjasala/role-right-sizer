@@ -12,17 +12,17 @@
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       role-right-sizer
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
 defined( 'ABSPATH' ) || exit;
 
 const VERSION     = '1.0.0';
 const PLUGIN_FILE = __FILE__;
 
-// PSR-4: AryanX\RoleRightSizer\Foo\Bar lives in src/Foo/Bar.php.
+// PSR-4: AryanX\Axle\RoleRightSizer\Foo\Bar lives in src/Foo/Bar.php.
 spl_autoload_register(
 	static function ( $class_name ) {
 		$prefix = __NAMESPACE__ . '\\';

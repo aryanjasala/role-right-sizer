@@ -2,10 +2,10 @@
 /**
  * When each role gained each capability, and which plugin added it.
  *
- * @package AryanX\RoleRightSizer
+ * @package AryanX\Axle\RoleRightSizer
  */
 
-namespace AryanX\RoleRightSizer;
+namespace AryanX\Axle\RoleRightSizer;
 
 defined( 'ABSPATH' ) || exit;
 
