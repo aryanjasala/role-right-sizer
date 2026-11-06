@@ -142,7 +142,8 @@ final class Screen implements Service {
 	 * Screen styles, and the script behind the review bar and the group checkboxes.
 	 */
 	public function enqueue_assets(): void {
-		wp_enqueue_style( 'role-right-sizer-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array(), VERSION );
+		AxleUi::enqueue();
+		wp_enqueue_style( 'role-right-sizer-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array( AxleUi::HANDLE ), VERSION );
 		wp_enqueue_script( 'role-right-sizer-admin', plugins_url( 'assets/admin.js', PLUGIN_FILE ), array( 'wp-hooks', 'wp-i18n' ), VERSION, true );
 		wp_set_script_translations( 'role-right-sizer-admin', 'role-right-sizer' );
 	}
@@ -191,16 +192,25 @@ final class Screen implements Service {
 		$tab  = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'recommendations';
 		$view = isset( $_GET['view'] ) ? sanitize_key( wp_unslash( $_GET['view'] ) ) : '';
 		// phpcs:enable
-		$tabs = array(
+		$tabs   = array(
 			'recommendations' => __( 'Recommendations', 'role-right-sizer' ),
 			'changes'         => __( 'Changes', 'role-right-sizer' ),
 			'settings'        => __( 'Settings', 'role-right-sizer' ),
 		);
-		$tab  = isset( $tabs[ $tab ] ) ? $tab : 'recommendations';
+		$tab    = isset( $tabs[ $tab ] ) ? $tab : 'recommendations';
+		$intros = array(
+			'recommendations' => __( 'Role Right-Sizer records which capabilities each person actually uses, then recommends the smallest role that covers it. Nothing changes until you apply a recommendation, and every change can be undone.', 'role-right-sizer' ),
+			'changes'         => __( 'Every change you applied, newest first. Undo puts the earlier roles and capabilities back.', 'role-right-sizer' ),
+			'settings'        => __( 'Choose what Role Right-Sizer recommends for dormant accounts, and which roles and people it never touches.', 'role-right-sizer' ),
+		);
+		$intro  = 'confirm' === $view ? __( 'Check every change before it is applied. Each one goes into the log, where one click undoes it.', 'role-right-sizer' ) : $intros[ $tab ];
 		?>
-		<div class="wrap rrs-page">
-			<h1><?php esc_html_e( 'Role Right-Sizer', 'role-right-sizer' ); ?></h1>
-			<p class="rrs-intro"><?php esc_html_e( 'Role Right-Sizer records which capabilities each person actually uses, then recommends the smallest role that covers it. Nothing changes until you apply a recommendation, and every change can be undone.', 'role-right-sizer' ); ?></p>
+		<div class="wrap axle-ui rrs-page">
+			<h1 class="wp-heading-inline"><?php esc_html_e( 'Role Right-Sizer', 'role-right-sizer' ); ?></h1>
+			<?php if ( $this->settings->is_learning() ) : ?>
+				<span class="axle-status axle-badge axle-badge--info"><?php esc_html_e( 'Learning', 'role-right-sizer' ); ?></span>
+			<?php endif; ?>
+			<hr class="wp-header-end">
 
 			<?php $this->render_notices(); ?>
 
@@ -209,6 +219,8 @@ final class Screen implements Service {
 					<a href="<?php echo esc_url( self::url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>><?php echo esc_html( $label ); ?></a>
 				<?php endforeach; ?>
 			</nav>
+
+			<p class="axle-intro"><?php echo esc_html( $intro ); ?></p>
 
 			<?php
 			if ( 'confirm' === $view ) {
@@ -220,6 +232,7 @@ final class Screen implements Service {
 			} else {
 				$this->render_recommendations();
 			}
+			AxleUi::footer();
 			?>
 		</div>
 		<?php
@@ -250,7 +263,7 @@ final class Screen implements Service {
 		}
 		?>
 		<div class="rrs-toolbar">
-			<p class="rrs-built">
+			<p class="rrs-built axle-muted">
 				<?php
 				if ( $report['built'] ) {
 					echo esc_html(
@@ -286,6 +299,25 @@ final class Screen implements Service {
 
 		<?php $this->render_skipped( $report ); ?>
 
+		<?php if ( $report['users'] || $report['roles'] ) : ?>
+			<div class="axle-stats">
+				<?php
+				$stats = array(
+					array( count( $users['downgrade'] ), __( 'could have a smaller role', 'role-right-sizer' ) ),
+					array( count( $users['dormant'] ), __( 'dormant accounts', 'role-right-sizer' ) ),
+					array( count( $users['never'] ), __( 'never logged in', 'role-right-sizer' ) ),
+					array( count( $report['roles'] ), __( 'unused capabilities on roles', 'role-right-sizer' ) ),
+				);
+				foreach ( $stats as $stat ) :
+					?>
+					<div class="axle-stat<?php echo $stat[0] > 0 ? ' axle-stat--warning' : ''; ?>">
+						<span class="axle-stat__value"><?php echo esc_html( number_format_i18n( $stat[0] ) ); ?></span>
+						<span class="axle-stat__label"><?php echo esc_html( $stat[1] ); ?></span>
+					</div>
+				<?php endforeach; ?>
+			</div>
+		<?php endif; ?>
+
 		<?php if ( 'running' === $report['status'] ) : ?>
 			<div class="notice notice-info inline"><p>
 				<?php
@@ -302,9 +334,8 @@ final class Screen implements Service {
 		<?php endif; ?>
 
 		<?php if ( ! $report['users'] && ! $report['roles'] ) : ?>
-			<div class="rrs-panel rrs-empty">
-				<h2><?php esc_html_e( 'Nothing to change', 'role-right-sizer' ); ?></h2>
-				<p><?php esc_html_e( 'Every account uses what its role gives it, and every capability on a role is used by someone.', 'role-right-sizer' ); ?></p>
+			<div class="axle-empty rrs-empty">
+				<p><strong><?php esc_html_e( 'Nothing to change.', 'role-right-sizer' ); ?></strong> <?php esc_html_e( 'Every account uses what its role gives it, and every capability on a role is used by someone.', 'role-right-sizer' ); ?></p>
 			</div>
 			<?php
 			return;
@@ -342,7 +373,7 @@ final class Screen implements Service {
 			?>
 			<div class="rrs-review-bar">
 				<button type="submit" class="button button-primary rrs-review-button" data-label="<?php esc_attr_e( 'Review selected changes', 'role-right-sizer' ); ?>"><?php esc_html_e( 'Review selected changes', 'role-right-sizer' ); ?></button>
-				<span class="rrs-muted"><?php esc_html_e( 'Nothing changes until you confirm on the next screen.', 'role-right-sizer' ); ?></span>
+				<span class="axle-muted"><?php esc_html_e( 'Nothing changes until you confirm on the next screen.', 'role-right-sizer' ); ?></span>
 			</div>
 		</form>
 		<?php
@@ -359,8 +390,8 @@ final class Screen implements Service {
 		$percent = $days ? min( 100, (int) floor( $elapsed / ( $days * DAY_IN_SECONDS ) * 100 ) ) : 100;
 		$left    = max( 1, (int) ceil( ( $ends - time() ) / DAY_IN_SECONDS ) );
 		?>
-		<section class="rrs-panel rrs-learning">
-			<h2><?php esc_html_e( 'Learning how people use the site', 'role-right-sizer' ); ?></h2>
+		<section class="axle-card rrs-learning">
+			<h2 class="axle-card__title"><?php esc_html_e( 'Learning how people use the site', 'role-right-sizer' ); ?></h2>
 			<p>
 				<?php
 				echo esc_html(
@@ -376,7 +407,7 @@ final class Screen implements Service {
 			<div class="rrs-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo esc_attr( (string) $percent ); ?>" aria-label="<?php esc_attr_e( 'Learning period', 'role-right-sizer' ); ?>">
 				<span style="width: <?php echo esc_attr( (string) $percent ); ?>%"></span>
 			</div>
-			<p class="rrs-muted">
+			<p class="axle-muted">
 				<?php
 				echo esc_html(
 					sprintf(
@@ -426,7 +457,7 @@ final class Screen implements Service {
 			return;
 		}
 		?>
-		<p class="rrs-skipped rrs-muted"><?php echo esc_html( implode( ' ', $lines ) ); ?></p>
+		<p class="rrs-skipped axle-muted"><?php echo esc_html( implode( ' ', $lines ) ); ?></p>
 		<?php
 	}
 
@@ -444,9 +475,9 @@ final class Screen implements Service {
 			return;
 		}
 		?>
-		<section class="rrs-section rrs-section--<?php echo esc_attr( $type ); ?>">
-			<h2><?php echo esc_html( $title ); ?> <span class="count">(<?php echo esc_html( number_format_i18n( count( $recommendations ) ) ); ?>)</span></h2>
-			<p class="rrs-muted"><?php echo esc_html( $description ); ?></p>
+		<section class="axle-card rrs-section rrs-section--<?php echo esc_attr( $type ); ?>">
+			<h2 class="axle-card__title"><?php echo esc_html( $title ); ?> <span class="count">(<?php echo esc_html( number_format_i18n( count( $recommendations ) ) ); ?>)</span></h2>
+			<p class="axle-muted"><?php echo esc_html( $description ); ?></p>
 			<table class="wp-list-table widefat striped rrs-table">
 				<thead>
 					<tr>
@@ -484,9 +515,9 @@ final class Screen implements Service {
 							</th>
 							<td class="column-primary">
 								<strong><?php echo esc_html( $user->display_name ); ?></strong>
-								<span class="rrs-muted"><?php echo esc_html( $user->user_login ); ?></span>
+								<span class="axle-muted"><?php echo esc_html( $user->user_login ); ?></span>
 								<?php if ( $is_self ) : ?>
-									<span class="rrs-note"><?php esc_html_e( 'This is you. Ask another administrator to change your role.', 'role-right-sizer' ); ?></span>
+									<span class="rrs-note axle-muted"><?php esc_html_e( 'This is you. Ask another administrator to change your role.', 'role-right-sizer' ); ?></span>
 								<?php else : ?>
 									<div class="row-actions"><a href="
 									<?php
@@ -589,9 +620,9 @@ final class Screen implements Service {
 		}
 		$groups = self::group_role_caps( $recommendations );
 		?>
-		<section class="rrs-section rrs-section--roles">
-			<h2><?php esc_html_e( 'Unused capabilities on roles', 'role-right-sizer' ); ?> <span class="count">(<?php echo esc_html( number_format_i18n( count( $recommendations ) ) ); ?>)</span></h2>
-			<p class="rrs-muted"><?php esc_html_e( 'Capabilities a role has had for the whole window that none of its users used. Usually left behind by a plugin. Core capabilities, new ones and the administrator role are not listed here.', 'role-right-sizer' ); ?></p>
+		<section class="axle-card rrs-section rrs-section--roles">
+			<h2 class="axle-card__title"><?php esc_html_e( 'Unused capabilities on roles', 'role-right-sizer' ); ?> <span class="count">(<?php echo esc_html( number_format_i18n( count( $recommendations ) ) ); ?>)</span></h2>
+			<p class="axle-muted"><?php esc_html_e( 'Capabilities a role has had for the whole window that none of its users used. Usually left behind by a plugin. Core capabilities, new ones and the administrator role are not listed here.', 'role-right-sizer' ); ?></p>
 			<table class="wp-list-table widefat striped rrs-table rrs-groups">
 				<thead>
 					<tr>
@@ -621,7 +652,7 @@ final class Screen implements Service {
 							<td class="column-primary">
 								<strong><?php echo esc_html( $role_label ); ?></strong>
 								<?php if ( '' !== $owner ) : ?>
-									<span class="rrs-owner"><?php echo esc_html( $owner ); ?></span>
+									<span class="rrs-owner axle-muted"><?php echo esc_html( $owner ); ?></span>
 								<?php endif; ?>
 							</td>
 							<td>
@@ -738,11 +769,10 @@ final class Screen implements Service {
 			}
 		);
 		?>
-		<section class="rrs-panel rrs-confirm">
-			<h2><?php esc_html_e( 'Review the changes', 'role-right-sizer' ); ?></h2>
+		<section class="axle-card rrs-confirm">
+			<h2 class="axle-card__title"><?php esc_html_e( 'Review the changes', 'role-right-sizer' ); ?></h2>
 			<?php if ( ! $items ) : ?>
-				<p><?php esc_html_e( 'Nothing was selected.', 'role-right-sizer' ); ?></p>
-				<p><a class="button" href="<?php echo esc_url( self::url() ); ?>"><?php esc_html_e( 'Back to the recommendations', 'role-right-sizer' ); ?></a></p>
+				<div class="axle-empty"><p><?php esc_html_e( 'Nothing was selected. Go back to the recommendations and tick what to change.', 'role-right-sizer' ); ?></p><a class="button" href="<?php echo esc_url( self::url() ); ?>"><?php esc_html_e( 'Back to the recommendations', 'role-right-sizer' ); ?></a></div>
 			<?php else : ?>
 				<p><?php esc_html_e( 'These accounts and roles lose the capabilities listed. Every change goes into the log under Changes, where one click undoes it.', 'role-right-sizer' ); ?></p>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -752,12 +782,17 @@ final class Screen implements Service {
 					<ul class="rrs-confirm-list">
 						<?php foreach ( $items as $item ) : ?>
 							<li class="<?php echo '' === $item['problem'] ? 'is-ready' : 'is-refused'; ?>">
+								<?php if ( '' === $item['problem'] ) : ?>
+									<span class="axle-badge axle-badge--info"><?php esc_html_e( 'Will be applied', 'role-right-sizer' ); ?></span>
+								<?php else : ?>
+									<span class="axle-badge axle-badge--error"><?php esc_html_e( 'Will be skipped', 'role-right-sizer' ); ?></span>
+								<?php endif; ?>
 								<strong><?php echo esc_html( $item['title'] ); ?></strong>
 								<?php if ( '' !== $item['change'] ) : ?>
 									<span class="rrs-change"><?php echo esc_html( $item['change'] ); ?></span>
 								<?php endif; ?>
 								<?php if ( '' !== ( $item['owner'] ?? '' ) ) : ?>
-									<span class="rrs-owner"><?php echo esc_html( $item['owner'] ); ?></span>
+									<span class="rrs-owner axle-muted"><?php echo esc_html( $item['owner'] ); ?></span>
 								<?php endif; ?>
 								<?php if ( '' === $item['problem'] ) : ?>
 									<input type="hidden" name="<?php echo esc_attr( $item['field'] ); ?>" value="<?php echo esc_attr( $item['value'] ); ?>">
@@ -773,7 +808,7 @@ final class Screen implements Service {
 							</li>
 						<?php endforeach; ?>
 					</ul>
-					<p class="submit">
+					<p class="axle-actions">
 						<?php if ( $ready ) : ?>
 							<button type="submit" class="button button-primary">
 								<?php
@@ -797,7 +832,7 @@ final class Screen implements Service {
 		$all = $this->changes->all();
 		if ( ! $all ) {
 			?>
-			<div class="rrs-panel rrs-empty"><p><?php esc_html_e( 'No changes yet. Changes you apply from the recommendations show up here, with an Undo button.', 'role-right-sizer' ); ?></p></div>
+			<div class="axle-empty rrs-empty"><p><?php esc_html_e( 'No changes yet. Changes you apply from the recommendations show up here, with an Undo button.', 'role-right-sizer' ); ?></p><a class="button" href="<?php echo esc_url( self::url() ); ?>"><?php esc_html_e( 'See the recommendations', 'role-right-sizer' ); ?></a></div>
 			<?php
 			return;
 		}
@@ -829,7 +864,7 @@ final class Screen implements Service {
 					<tr data-change="<?php echo esc_attr( (string) $change['id'] ); ?>">
 						<td>
 							<?php echo esc_html( (string) wp_date( (string) $format, (int) $change['time'] ) ); ?><br>
-							<span class="rrs-muted">
+							<span class="axle-muted">
 								<?php
 								if ( $by ) {
 									/* translators: %s: user name. */
@@ -860,10 +895,10 @@ final class Screen implements Service {
 						<td><?php $this->render_caps( (array) $change['lost'] ); ?></td>
 						<td class="rrs-undo">
 							<?php if ( $change['undone'] ) : ?>
-								<span class="rrs-muted">
+								<span class="axle-badge axle-badge--neutral"><?php esc_html_e( 'Undone', 'role-right-sizer' ); ?></span>
+								<span class="axle-muted">
 									<?php
-									/* translators: %s: date and time. */
-									echo esc_html( sprintf( __( 'Undone %s', 'role-right-sizer' ), wp_date( (string) $format, (int) $change['undone'] ) ) );
+									echo esc_html( (string) wp_date( (string) $format, (int) $change['undone'] ) );
 									?>
 								</span>
 							<?php else : ?>
@@ -913,10 +948,12 @@ final class Screen implements Service {
 			}
 		}
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="rrs-panel rrs-settings">
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="rrs-settings">
 			<?php wp_nonce_field( self::ACTION ); ?>
 			<input type="hidden" name="action" value="<?php echo esc_attr( self::ACTION ); ?>">
 			<input type="hidden" name="task" value="settings">
+			<section class="axle-card">
+			<h2 class="axle-card__title"><?php esc_html_e( 'What to recommend', 'role-right-sizer' ); ?></h2>
 			<table class="form-table" role="presentation">
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Dormant accounts', 'role-right-sizer' ); ?></th>
@@ -954,41 +991,28 @@ final class Screen implements Service {
 						<p class="description"><?php esc_html_e( 'Usernames or email addresses, one per line. For example a break-glass admin account that is never used.', 'role-right-sizer' ); ?></p>
 					</td>
 				</tr>
-				<tr>
-					<th scope="row"><?php esc_html_e( 'Timing', 'role-right-sizer' ); ?></th>
-					<td>
-						<ul class="rrs-facts">
-							<li>
-								<?php
-								/* translators: %s: date. */
-								echo esc_html( sprintf( __( 'Tracking began on %s.', 'role-right-sizer' ), self::date_label( $this->settings->tracking_started() ) ) );
-								?>
-							</li>
-							<li>
-								<?php
-								/* translators: %s: number of days. */
-								echo esc_html( sprintf( __( 'Learning period: %s days.', 'role-right-sizer' ), number_format_i18n( $this->settings->learning_days() ) ) );
-								?>
-							</li>
-							<li>
-								<?php
-								/* translators: %s: number of days. */
-								echo esc_html( sprintf( __( 'A capability counts as used for %s days.', 'role-right-sizer' ), number_format_i18n( $this->settings->window_days() ) ) );
-								?>
-							</li>
-							<li>
-								<?php
-								/* translators: %s: number of days. */
-								echo esc_html( sprintf( __( 'An account is dormant after %s days without activity.', 'role-right-sizer' ), number_format_i18n( $this->settings->dormant_days() ) ) );
-								?>
-							</li>
-						</ul>
-						<p class="description"><?php esc_html_e( 'Change these with the filters listed in the plugin reference.', 'role-right-sizer' ); ?></p>
-					</td>
-				</tr>
 			</table>
+			</section>
 			<?php submit_button( __( 'Save settings', 'role-right-sizer' ) ); ?>
 		</form>
+
+		<section class="axle-card">
+			<h2 class="axle-card__title"><?php esc_html_e( 'Timing', 'role-right-sizer' ); ?></h2>
+			<dl class="axle-facts rrs-facts">
+				<dt><?php esc_html_e( 'Tracking began', 'role-right-sizer' ); ?></dt>
+				<dd><?php echo esc_html( self::date_label( $this->settings->tracking_started() ) ); ?></dd>
+				<dt><?php esc_html_e( 'Learning period', 'role-right-sizer' ); ?></dt>
+				<?php /* translators: %s: number of days. */ ?>
+				<dd><?php echo esc_html( sprintf( _n( '%s day', '%s days', $this->settings->learning_days(), 'role-right-sizer' ), number_format_i18n( $this->settings->learning_days() ) ) ); ?></dd>
+				<dt><?php esc_html_e( 'A capability counts as used for', 'role-right-sizer' ); ?></dt>
+				<?php /* translators: %s: number of days. */ ?>
+				<dd><?php echo esc_html( sprintf( _n( '%s day', '%s days', $this->settings->window_days(), 'role-right-sizer' ), number_format_i18n( $this->settings->window_days() ) ) ); ?></dd>
+				<dt><?php esc_html_e( 'An account is dormant after', 'role-right-sizer' ); ?></dt>
+				<?php /* translators: %s: number of days. */ ?>
+				<dd><?php echo esc_html( sprintf( _n( '%s day without activity', '%s days without activity', $this->settings->dormant_days(), 'role-right-sizer' ), number_format_i18n( $this->settings->dormant_days() ) ) ); ?></dd>
+			</dl>
+			<p class="description"><?php esc_html_e( 'Change these with the filters listed in the plugin reference.', 'role-right-sizer' ); ?></p>
+		</section>
 		<?php
 	}
 
@@ -999,7 +1023,7 @@ final class Screen implements Service {
 	 */
 	private function render_caps( array $caps ): void {
 		if ( ! $caps ) {
-			echo '<span class="rrs-muted">' . esc_html__( 'None', 'role-right-sizer' ) . '</span>';
+			echo '<span class="axle-muted">' . esc_html__( 'None', 'role-right-sizer' ) . '</span>';
 			return;
 		}
 		?>
@@ -1026,7 +1050,7 @@ final class Screen implements Service {
 	 */
 	private function render_used( array $used ): void {
 		if ( ! $used ) {
-			echo '<span class="rrs-muted">' . esc_html__( 'Nothing beyond reading', 'role-right-sizer' ) . '</span>';
+			echo '<span class="axle-muted">' . esc_html__( 'Nothing beyond reading', 'role-right-sizer' ) . '</span>';
 			return;
 		}
 		arsort( $used );
@@ -1040,7 +1064,7 @@ final class Screen implements Service {
 			</summary>
 			<ul>
 				<?php foreach ( $used as $cap => $last ) : ?>
-					<li><code><?php echo esc_html( (string) $cap ); ?></code> <span class="rrs-muted"><?php echo esc_html( self::date_label( (int) $last ) ); ?></span></li>
+					<li><code><?php echo esc_html( (string) $cap ); ?></code> <span class="axle-muted"><?php echo esc_html( self::date_label( (int) $last ) ); ?></span></li>
 				<?php endforeach; ?>
 			</ul>
 		</details>
