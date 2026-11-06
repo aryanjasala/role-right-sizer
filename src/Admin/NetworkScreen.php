@@ -63,7 +63,8 @@ final class NetworkScreen implements Service {
 			add_action(
 				"admin_print_styles-{$hook}",
 				static function () {
-					wp_enqueue_style( 'role-right-sizer-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array(), VERSION );
+					AxleUi::enqueue();
+					wp_enqueue_style( 'role-right-sizer-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array( AxleUi::HANDLE ), VERSION );
 				}
 			);
 		}
@@ -114,9 +115,12 @@ final class NetworkScreen implements Service {
 
 		$admins = array_filter( array_map( 'get_user_by', array_fill( 0, count( get_super_admins() ), 'login' ), get_super_admins() ) );
 		?>
-		<div class="wrap rrs-page">
-			<h1><?php esc_html_e( 'Role Right-Sizer', 'role-right-sizer' ); ?></h1>
-			<p class="rrs-intro"><?php esc_html_e( 'Super admins can do everything on every site, so Role Right-Sizer makes no recommendations for them. Here is what each one actually did, so you can spot accounts that no longer need super admin.', 'role-right-sizer' ); ?></p>
+		<div class="wrap axle-ui rrs-page">
+			<h1 class="wp-heading-inline"><?php esc_html_e( 'Role Right-Sizer', 'role-right-sizer' ); ?></h1>
+			<hr class="wp-header-end">
+			<p class="axle-intro"><?php esc_html_e( 'Super admins can do everything on every site, so Role Right-Sizer makes no recommendations for them. Here is what each one actually did, so you can spot accounts that no longer need super admin.', 'role-right-sizer' ); ?></p>
+			<section class="axle-card">
+			<h2 class="axle-card__title"><?php esc_html_e( 'Super admins', 'role-right-sizer' ); ?></h2>
 			<table class="widefat striped rrs-table">
 				<thead>
 					<tr>
@@ -129,11 +133,11 @@ final class NetworkScreen implements Service {
 					<?php foreach ( $admins as $admin ) : ?>
 						<?php $sites = self::sites_from_meta( (array) get_user_meta( $admin->ID ), (string) $wpdb->base_prefix ); ?>
 						<tr>
-							<td><strong><?php echo esc_html( $admin->display_name ); ?></strong> <span class="rrs-muted"><?php echo esc_html( $admin->user_login ); ?></span></td>
+							<td><strong><?php echo esc_html( $admin->display_name ); ?></strong> <span class="axle-muted"><?php echo esc_html( $admin->user_login ); ?></span></td>
 							<td><?php echo esc_html( Screen::date_label( $this->store->last_login( $admin->ID ) ) ); ?></td>
 							<td>
 								<?php if ( ! $sites ) : ?>
-									<span class="rrs-muted"><?php esc_html_e( 'No activity recorded', 'role-right-sizer' ); ?></span>
+									<span class="axle-muted"><?php esc_html_e( 'No activity recorded', 'role-right-sizer' ); ?></span>
 								<?php else : ?>
 									<ul class="rrs-sites">
 										<?php foreach ( $sites as $site_id => $site ) : ?>
@@ -159,6 +163,8 @@ final class NetworkScreen implements Service {
 					<?php endforeach; ?>
 				</tbody>
 			</table>
+			</section>
+			<?php AxleUi::footer(); ?>
 		</div>
 		<?php
 	}
