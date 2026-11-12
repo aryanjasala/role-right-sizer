@@ -99,6 +99,7 @@ final class SettingsTest extends PluginTestCase {
 				'fallback_role'  => '',
 				'excluded_users' => array( 3 ),
 				'excluded_roles' => array( 'editor' ),
+				'trial_end_action' => 'ask',
 			),
 			$this->options[ Settings::OPTION ]
 		);

@@ -22,6 +22,8 @@ if ( ! class_exists( 'WP_User' ) ) {
 		/** @var string */
 		public $display_name = '';
 		/** @var string */
+		public $user_email = '';
+		/** @var string */
 		public $user_registered = '';
 		/** @var array[] Every role change, in order. */
 		public $calls = array();

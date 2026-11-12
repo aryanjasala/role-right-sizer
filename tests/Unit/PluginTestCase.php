@@ -47,6 +47,13 @@ abstract class PluginTestCase extends TestCase {
 	 */
 	protected $current_user = 0;
 
+	/**
+	 * Users the current user may not edit or promote, whatever their capabilities.
+	 *
+	 * @var int[]
+	 */
+	protected $no_access = array();
+
 	protected function setUp(): void {
 		parent::setUp();
 
@@ -54,6 +61,7 @@ abstract class PluginTestCase extends TestCase {
 		$this->users        = array();
 		$this->meta         = array();
 		$this->current_user = 0;
+		$this->no_access    = array();
 		\WP_User_Query::$users = array();
 		\WP_User_Query::$made  = array();
 
@@ -115,9 +123,16 @@ abstract class PluginTestCase extends TestCase {
 			}
 		);
 		Functions\when( 'current_user_can' )->alias(
-			function ( $cap ) {
+			function ( $cap, $object_id = 0 ) {
 				$user = $this->users[ $this->current_user ] ?? null;
-				return $user && ( in_array( $cap, $this->caps_of( $user ), true ) || ( 'promote_user' === $cap && in_array( 'promote_users', $this->caps_of( $user ), true ) ) );
+				if ( in_array( $cap, array( 'edit_user', 'promote_user' ), true ) && in_array( (int) $object_id, $this->no_access, true ) ) {
+					return false;
+				}
+				$map = array(
+					'promote_user' => 'promote_users',
+					'edit_user'    => 'edit_users',
+				);
+				return $user && ( in_array( $cap, $this->caps_of( $user ), true ) || ( isset( $map[ $cap ] ) && in_array( $map[ $cap ], $this->caps_of( $user ), true ) ) );
 			}
 		);
 		Functions\when( 'get_users' )->alias(

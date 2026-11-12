@@ -10,7 +10,9 @@ namespace AryanX\Axle\RoleRightSizer;
 use AryanX\Axle\RoleRightSizer\Admin\NetworkScreen;
 use AryanX\Axle\RoleRightSizer\Admin\Screen;
 use AryanX\Axle\RoleRightSizer\Cli\Command;
+use AryanX\Axle\RoleRightSizer\Cli\TrialCommand;
 use AryanX\Axle\RoleRightSizer\Health\SiteHealth;
+use AryanX\Axle\RoleRightSizer\Trial\Watcher;
 use AryanX\Axle\RoleRightSizer\Usage\AdminScreens;
 use AryanX\Axle\RoleRightSizer\Usage\HookMap;
 use AryanX\Axle\RoleRightSizer\Usage\Recorder;
@@ -88,6 +90,13 @@ final class Plugin {
 	private Applier $applier;
 
 	/**
+	 * Trials of a smaller role.
+	 *
+	 * @var Trials
+	 */
+	private Trials $trials;
+
+	/**
 	 * Starts the plugin. Runs on `plugins_loaded`.
 	 */
 	public static function boot(): void {
@@ -122,6 +131,7 @@ final class Plugin {
 	public static function deactivate(): void {
 		wp_clear_scheduled_hook( Report::CRON );
 		wp_clear_scheduled_hook( Report::DAILY );
+		wp_clear_scheduled_hook( Trials::CRON );
 	}
 
 	/**
@@ -136,6 +146,7 @@ final class Plugin {
 		$this->report      = new Report( $this->settings, $this->recommender, $this->store, $this->history );
 		$this->changes     = new Changes();
 		$this->applier     = new Applier( $this->settings, $this->recommender, $this->report, $this->changes );
+		$this->trials      = new Trials( $this->settings, $this->applier, $this->recommender, $this->report );
 	}
 
 	/**
@@ -211,6 +222,15 @@ final class Plugin {
 	}
 
 	/**
+	 * Trials of a smaller role.
+	 *
+	 * @return Trials
+	 */
+	public function trials(): Trials {
+		return $this->trials;
+	}
+
+	/**
 	 * Registers the services.
 	 */
 	private function register(): void {
@@ -222,11 +242,13 @@ final class Plugin {
 			new AdminScreens( $this->recorder ),
 			new RestWatcher( $this->recorder ),
 			$this->report,
-			new Screen( $this->settings, $this->store, $this->recommender, $this->report, $this->changes, $this->applier ),
+			$this->trials,
+			new Watcher( $this->trials ),
+			new Screen( $this->settings, $this->store, $this->recommender, $this->report, $this->changes, $this->applier, $this->trials ),
 			new NetworkScreen( $this->store ),
-			new SiteHealth( $this->settings, $this->report ),
-			new Privacy( $this->store, $this->changes ),
-			new Abilities( $this->settings, $this->store, $this->recommender, $this->report, $this->changes, $this->applier ),
+			new SiteHealth( $this->settings, $this->report, $this->trials ),
+			new Privacy( $this->store, $this->changes, $this->trials ),
+			new Abilities( $this->settings, $this->store, $this->recommender, $this->report, $this->changes, $this->applier, $this->trials ),
 		);
 
 		foreach ( $services as $service ) {
@@ -235,6 +257,7 @@ final class Plugin {
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'role-right-sizer', new Command( $this->settings, $this->store, $this->recommender, $this->report, $this->changes, $this->applier ) );
+			\WP_CLI::add_command( 'role-right-sizer trial', new TrialCommand( $this->trials ) );
 		}
 	}
 }

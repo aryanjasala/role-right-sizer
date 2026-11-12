@@ -1,7 +1,7 @@
 const { test, expect, wp, wpEval, logInAs } = require( './utils' );
 
 const SCREEN = '/wp-admin/users.php?page=role-right-sizer';
-const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history' ];
+const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials' ];
 // Capabilities the tests put on core roles, taken off again in reset().
 const TEST_CAPS = [ [ 'administrator', 'rrs_e2e_approve' ] ];
 const LOGINS = [ 'pat', 'sam', 'olive', 'gus', 'casey', 'jo' ];
@@ -71,7 +71,8 @@ const reset = () => {
 	}
 	trackingStarted( 0 );
 	// The test admin has used the screen and settings for a while, like a real one would have.
-	wpEval( `foreach ( array( 'role_right_sizer_usage', 'role_right_sizer_abilities', 'role_right_sizer_last_active' ) as $key ) { delete_user_option( 1, $key ); }
+	wpEval( `foreach ( array( 'role_right_sizer_usage', 'role_right_sizer_abilities', 'role_right_sizer_last_active', 'role_right_sizer_trial' ) as $key ) { delete_user_option( 1, $key ); }
+		delete_user_meta( 1, 'role_right_sizer_steps_dismissed' );
 		AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->store()->add_usage( 1, array( 'promote_users', 'manage_options', 'activate_plugins', 'list_users' ), time(), 3600 );
 		update_user_option( 1, 'role_right_sizer_last_active', time() );` );
 };
@@ -141,7 +142,7 @@ test.describe( 'Role Right-Sizer', () => {
 		await page.goto( SCREEN );
 		await expect( page.locator( '.rrs-learning h2' ) ).toHaveText( 'Learning how people use the site' );
 		await expect( page.locator( '.rrs-learning' ) ).toContainText( 'Recommendations show up in 27 days' );
-		await expect( page.locator( '.rrs-progress' ) ).toHaveAttribute( 'aria-valuenow', '10' );
+		await expect( page.locator( '.axle-progress' ) ).toHaveAttribute( 'aria-valuenow', '10' );
 		await expect( page.locator( '.rrs-table' ) ).toHaveCount( 0 );
 		expect( wpEval( "echo false === get_option( 'role_right_sizer_report' ) ? 'none' : 'saved';" ) ).toBe( 'none' );
 		expect( () => wp( 'role-right-sizer', 'apply', '--all', '--yes' ) ).toThrow( /Still learning/ );
@@ -154,7 +155,7 @@ test.describe( 'Role Right-Sizer', () => {
 		await page.goto( SCREEN );
 		const row = page.locator( '.rrs-section--downgrade tr[data-user="pat"]' );
 		await expect( row ).toContainText( 'Administrator' );
-		await expect( row.locator( '.rrs-proposed' ) ).toHaveText( 'Editor' );
+		await expect( row.locator( '.rrs-proposed' ) ).toContainText( 'Editor' );
 		await row.locator( 'details' ).first().locator( 'summary' ).click();
 		await expect( row.locator( 'details' ).first() ).toContainText( 'manage_options' );
 		await expect( row.locator( 'details' ).first() ).toContainText( 'activate_plugins' );
@@ -186,7 +187,8 @@ test.describe( 'Role Right-Sizer', () => {
 		await review.click();
 		const item = page.locator( '.rrs-confirm-list li' );
 		await expect( item ).toContainText( 'Pat (pat)' );
-		await expect( item ).toContainText( 'Administrator → Editor' );
+		await expect( item.locator( 'del' ) ).toContainText( 'Administrator' );
+		await expect( item.locator( 'ins' ) ).toContainText( 'Editor' );
 		await expect( item.locator( '.rrs-lost' ) ).toContainText( 'manage_options' );
 		expect( roles( 'pat' ) ).toBe( 'administrator' );
 
@@ -197,8 +199,13 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( change ).toMatchObject( { kind: 'downgrade', target: 'pat', before: 'administrator', after: 'editor', undone: '', by: 1 } );
 
 		const logged = page.locator( `.rrs-changes tr[data-change="${ change.id }"]` );
-		await expect( logged ).toContainText( 'Administrator → Editor' );
-		await logged.getByRole( 'button', { name: 'Undo', exact: true } ).click();
+		await expect( logged.locator( 'del' ) ).toContainText( 'Administrator' );
+		await expect( logged.locator( 'ins' ) ).toContainText( 'Editor' );
+		// Undo asks first, in place, and says what changes.
+		await logged.locator( 'summary', { hasText: 'Undo' } ).click();
+		await expect( logged.locator( '.axle-confirm' ) ).toContainText( 'changes the role from Editor back to Administrator' );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+		await logged.getByRole( 'button', { name: 'Undo this change' } ).click();
 		await expect( page.locator( '.notice-success' ) ).toContainText( 'Undid 1 change.' );
 		expect( roles( 'pat' ) ).toBe( 'administrator' );
 		expect( JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) )[ 0 ].undone ).not.toBe( '' );
@@ -217,8 +224,8 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( report.find( ( row ) => row.target === 'gus' ) ).toMatchObject( { type: 'never', proposed: 'none' } );
 
 		await page.goto( SCREEN );
-		await expect( page.locator( '.rrs-section--dormant tr[data-user="olive"] .rrs-proposed' ) ).toHaveText( 'No role' );
-		await expect( page.locator( '.rrs-section--never tr[data-user="gus"] .rrs-proposed' ) ).toHaveText( 'No role' );
+		await expect( page.locator( '.rrs-section--dormant tr[data-user="olive"] .rrs-proposed' ) ).toContainText( 'No role' );
+		await expect( page.locator( '.rrs-section--never tr[data-user="gus"] .rrs-proposed' ) ).toContainText( 'No role' );
 
 		await page.goto( `${ SCREEN }&tab=settings` );
 		await page.locator( 'input[name="dormant_action"][value="fallback"]' ).check();
@@ -228,7 +235,7 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( json( "get_option( 'role_right_sizer_settings' )" ) ).toMatchObject( { dormant_action: 'fallback', fallback_role: 'subscriber' } );
 
 		await page.goto( SCREEN );
-		await expect( page.locator( 'tr[data-user="olive"] .rrs-proposed' ) ).toHaveText( 'Subscriber' );
+		await expect( page.locator( 'tr[data-user="olive"] .rrs-proposed' ) ).toContainText( 'Subscriber' );
 		await page.locator( 'tr[data-user="olive"] input[name="users[]"]' ).check();
 		await page.locator( 'tr[data-user="gus"] input[name="users[]"]' ).check();
 		await page.getByRole( 'button', { name: 'Review 2 selected changes' } ).click();
@@ -262,7 +269,8 @@ test.describe( 'Role Right-Sizer', () => {
 		await expect( page.locator( '.rrs-section--roles [data-cap="edit_posts"]' ) ).toHaveCount( 0 );
 		await row.getByRole( 'link', { name: 'Remove view_shop_reports from Shop Editor' } ).focus();
 		await Promise.all( [ page.waitForURL( /view=confirm/ ), page.keyboard.press( 'Enter' ) ] );
-		await expect( page.locator( '.rrs-confirm-list li' ) ).toContainText( 'Remove view_shop_reports' );
+		await expect( page.locator( '.rrs-confirm-list li' ) ).toContainText( 'Role: Shop Editor' );
+		await expect( page.locator( '.rrs-confirm-list li del' ) ).toContainText( 'view_shop_reports' );
 		await page.getByRole( 'button', { name: 'Apply 1 change' } ).click();
 		await expect( page.locator( '.notice-success' ) ).toContainText( 'Applied 1 change.' );
 		const hasCap = () => wpEval( "echo get_role( 'shop_editor' )->has_cap( 'view_shop_reports' ) ? 'yes' : 'no';" );
@@ -295,7 +303,7 @@ test.describe( 'Role Right-Sizer', () => {
 
 		// A forged request is refused too.
 		await page.goto( SCREEN );
-		const nonce = await page.locator( '.rrs-toolbar input[name="_wpnonce"]' ).first().inputValue();
+		const nonce = await page.locator( '.axle-toolbar input[name="_wpnonce"]' ).first().inputValue();
 		const forged = await page.request.post( '/wp-admin/admin-post.php', { form: { action: 'role_right_sizer', task: 'apply', _wpnonce: nonce, 'users[]': '1' } } );
 		expect( forged.url() ).toContain( 'rrs_errors=self' );
 		expect( roles( 'admin' ) ).toBe( 'administrator' );
@@ -451,7 +459,18 @@ test.describe( 'Role Right-Sizer', () => {
 
 		const listed = await rest( 'GET', '/wp-abilities/v1/abilities?category=role-right-sizer' );
 		expect( listed.status ).toBe( 200 );
-		expect( listed.body.map( ( ability ) => ability.name ).sort() ).toEqual( [ 'role-right-sizer/apply-recommendation', 'role-right-sizer/get-recommendations', 'role-right-sizer/get-user-usage', 'role-right-sizer/undo-change' ] );
+		expect( listed.body.map( ( ability ) => ability.name ).sort() ).toEqual( [
+			'role-right-sizer/apply-recommendation',
+			'role-right-sizer/extend-trial',
+			'role-right-sizer/get-changes',
+			'role-right-sizer/get-recommendations',
+			'role-right-sizer/get-user-usage',
+			'role-right-sizer/keep-trial',
+			'role-right-sizer/list-trials',
+			'role-right-sizer/restore-trial',
+			'role-right-sizer/start-trial',
+			'role-right-sizer/undo-change',
+		] );
 		// MCP clients only list abilities marked public.
 		expect( json( "array_values( array_filter( array_map( function ( $ability ) { $meta = $ability->get_meta(); return ( ! empty( $meta['public'] ) && ! empty( $meta['mcp']['public'] ) ) ? '' : $ability->get_name(); }, wp_get_abilities() ), function ( $name ) { return 0 === strpos( $name, 'role-right-sizer/' ); } ) )" ) ).toEqual( [] );
 
@@ -480,5 +499,175 @@ test.describe( 'Role Right-Sizer', () => {
 
 		// Ability runs are recorded per user.
 		expect( Object.keys( json( "get_user_option( 'role_right_sizer_abilities', 1 )" ) ) ).toEqual( expect.arrayContaining( [ 'role-right-sizer/get-recommendations', 'role-right-sizer/apply-recommendation' ] ) );
+	} );
+
+	test( 'tries the smaller role, records what the person could not do, and gives the old role back', async ( { browser, page } ) => {
+		await patWorksLikeAnEditor( browser );
+		trackingStarted( 40 );
+
+		await page.goto( `${ SCREEN }&tab=trials` );
+		await expect( page.locator( '.rrs-empty' ) ).toContainText( 'No trials yet.' );
+
+		await page.goto( SCREEN );
+		const row = page.locator( '.rrs-section--downgrade tr[data-user="pat"]' );
+		await row.hover();
+		await row.getByRole( 'link', { name: 'Try for 14 days' } ).click();
+		await expect( page.locator( '.rrs-confirm' ) ).toContainText( 'These people get the smaller role for 14 days' );
+		expect( roles( 'pat' ) ).toBe( 'administrator' );
+		await page.getByRole( 'button', { name: 'Try for 14 days' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Started 1 trial for 14 days' );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+		const [ started ] = JSON.parse( wp( 'role-right-sizer', 'trial', 'list', '--format=json' ) );
+		expect( started ).toMatchObject( { user: 'pat', status: 'active', days_left: 14, before: 'administrator', during: 'editor', denials: 0 } );
+		// The trial is in the change log, so Undo works too.
+		expect( JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) )[ 0 ] ).toMatchObject( { kind: 'downgrade', target: 'pat', after: 'editor' } );
+
+		// Pat hits two walls: a screen the menu refuses, and a REST call that creates a user.
+		const pat = await loginAs( browser, 'pat' );
+		await pat.page.goto( '/wp-admin/plugins.php' );
+		await expect( pat.page.locator( '.role-right-sizer-wall' ) ).toContainText( 'Your access was reduced' );
+		await expect( pat.page.locator( '.role-right-sizer-wall' ) ).toContainText( 'Ask for it back.' );
+		const refused = await pat.rest( 'POST', '/wp/v2/users', { username: 'rrs_new', email: 'rrs_new@example.com', password: 'Passw0rd!x1y2' } );
+		expect( refused.status ).toBe( 403 );
+		expect( refused.body.role_right_sizer_trial ).toContain( 'Ask for it back.' );
+		// Reading a screen they may open, and an expired link, are not walls.
+		await pat.page.goto( '/wp-admin/edit.php' );
+		const denials = () => JSON.parse( wp( 'role-right-sizer', 'trial', 'denials', String( started.id ), '--format=json' ) );
+		expect( denials().map( ( denial ) => denial.what ).sort() ).toEqual( [ 'Could not add users', 'Tried to open Plugins' ] );
+
+		// Asking for the access back tells whoever started the trial.
+		await pat.page.goto( '/wp-admin/plugins.php' );
+		await pat.page.getByRole( 'button', { name: 'Request my access back' } ).click();
+		await expect( pat.page.locator( '.notice-success' ) ).toContainText( 'Your request was sent' );
+		await pat.page.goto( '/wp-admin/plugins.php' );
+		await expect( pat.page.locator( '.role-right-sizer-wall' ) ).toContainText( 'You already asked' );
+		await pat.context.close();
+
+		await page.goto( `${ SCREEN }&tab=trials` );
+		const trial = page.locator( `tr[data-trial="${ started.id }"]` );
+		await expect( trial ).toContainText( 'Pat' );
+		await expect( trial ).toContainText( 'Tried to open Plugins' );
+		await expect( trial ).toContainText( 'Could not add users' );
+		await expect( trial ).toContainText( 'Asked for access back' );
+		await expect( trial ).toContainText( '14 days left' );
+		await expect( trial.locator( 'del' ) ).toContainText( 'Administrator' );
+		await expect( trial.locator( 'ins' ) ).toContainText( 'Editor' );
+
+		// Extend by a click, restore after a confirmation that says what changes.
+		await trial.getByRole( 'button', { name: 'Extend by 14 days' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Extended the trial.' );
+		expect( JSON.parse( wp( 'role-right-sizer', 'trial', 'list', '--format=json' ) )[ 0 ].days_left ).toBe( 28 );
+		await page.evaluate( () => {
+			window.rrsConfirm = [];
+			window.wp.hooks.addAction( 'roleRightSizer.confirmOpened', 'e2e', ( details ) => window.rrsConfirm.push( details.querySelector( 'summary' ).textContent.trim() ) );
+		} );
+		await trial.locator( 'summary', { hasText: 'Restore now' } ).click();
+		await expect( trial.locator( '.axle-confirm' ).first() ).toContainText( 'back to Administrator now and ends the trial' );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+		expect( await page.evaluate( () => window.rrsConfirm ) ).toEqual( [ 'Restore now' ] );
+		await expect( trial.locator( '.axle-confirm' ).first().getByRole( 'button', { name: 'Restore the old role' } ) ).toBeFocused();
+		await trial.getByRole( 'button', { name: 'Restore the old role' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Gave the old role back' );
+		// The result is announced to screen readers.
+		await expect( page.locator( '#a11y-speak-polite' ) ).toContainText( 'Gave the old role back' );
+		expect( roles( 'pat' ) ).toBe( 'administrator' );
+		await expect( page.locator( `tr[data-trial="${ started.id }"]` ) ).toContainText( 'Old role restored' );
+		expect( JSON.parse( wp( 'role-right-sizer', 'trial', 'list', '--format=json' ) )[ 0 ].status ).toBe( 'restored' );
+		expect( JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) )[ 0 ].undone ).not.toBe( '' );
+	} );
+
+	test( 'a trial that ends waits for a decision, or keeps itself only when nothing stopped the person', async ( { browser } ) => {
+		await patWorksLikeAnEditor( browser );
+		trackingStarted( 40 );
+		const endNow = ( id ) => wpEval( `
+			$log = get_option( 'role_right_sizer_trials' );
+			foreach ( $log['items'] as $i => $trial ) { if ( ${ id } === (int) $trial['id'] ) { $log['items'][ $i ]['ends'] = time() - 60; } }
+			update_option( 'role_right_sizer_trials', $log, false );
+			AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->trials()->check();
+		` );
+		const list = () => JSON.parse( wp( 'role-right-sizer', 'trial', 'list', '--format=json' ) );
+
+		// With the default setting a trial that ends with no denials asks.
+		expect( wp( 'role-right-sizer', 'trial', 'start', 'pat' ) ).toContain( 'Started 1 trial(s).' );
+		expect( () => wp( 'role-right-sizer', 'trial', 'start', 'pat' ) ).toThrow( /already on a trial/ );
+		endNow( 1 );
+		expect( list()[ 0 ] ).toMatchObject( { status: 'ended', days_left: 0 } );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+		const health = JSON.parse( wpEval( `
+			$tests = apply_filters( 'site_status_tests', array() );
+			echo wp_json_encode( call_user_func( $tests['direct']['role_right_sizer']['test'] ) );
+		` ) );
+		expect( health.label ).toContain( 'trial is over and waiting for a decision' );
+		wp( 'role-right-sizer', 'trial', 'extend', '1', '--days=2' );
+		expect( list()[ 0 ] ).toMatchObject( { status: 'active', days_left: 2 } );
+		expect( wp( 'role-right-sizer', 'trial', 'restore', '1' ) ).toContain( 'old role back' );
+		expect( roles( 'pat' ) ).toBe( 'administrator' );
+
+		// The setting makes a clean trial permanent, but a trial with denials is never closed on its own.
+		wp( 'role-right-sizer', 'settings', '--trial-end-action=keep' );
+		wp( 'role-right-sizer', 'trial', 'start', 'pat', '--days=3' );
+		const pat = await loginAs( browser, 'pat' );
+		await pat.page.goto( '/wp-admin/plugins.php' );
+		await pat.context.close();
+		endNow( 2 );
+		expect( list()[ 0 ] ).toMatchObject( { status: 'ended', denials: 1 } );
+		expect( () => wp( 'role-right-sizer', 'trial', 'keep', '99' ) ).toThrow( /does not exist/ );
+		wp( 'role-right-sizer', 'trial', 'keep', '2' );
+		expect( list()[ 0 ].status ).toBe( 'kept' );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+		const change = JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) )[ 0 ];
+		wp( 'role-right-sizer', 'undo', String( change.id ) );
+		expect( roles( 'pat' ) ).toBe( 'administrator' );
+
+		wp( 'role-right-sizer', 'trial', 'start', 'pat', '--days=3' );
+		endNow( 3 );
+		expect( list()[ 0 ] ).toMatchObject( { status: 'kept' } );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+		wp( 'role-right-sizer', 'settings', '--trial-end-action=ask' );
+	} );
+
+	test( 'abilities: an agent starts, lists, extends, restores and cannot keep a closed trial', async ( { browser, rest } ) => {
+		test.skip( 'yes' !== wpEval( "echo function_exists( 'wp_register_ability' ) ? 'yes' : 'no';" ), 'The Abilities API needs WordPress 6.9.' );
+		await patWorksLikeAnEditor( browser );
+		trackingStarted( 40 );
+		const path = ( name ) => `/wp-abilities/v1/abilities/role-right-sizer/${ name }/run`;
+
+		const started = await rest( 'POST', path( 'start-trial' ), { input: { user_id: userId( 'pat' ), days: 5 } } );
+		expect( started.status ).toBe( 200 );
+		expect( started.body.trial ).toMatchObject( { login: 'pat', status: 'active', days_left: 5, before: [ 'administrator' ], during: [ 'editor' ] } );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+
+		const open = await rest( 'GET', `${ path( 'list-trials' ) }?input[status]=open` );
+		expect( open.body.trials.map( ( trial ) => trial.login ) ).toEqual( [ 'pat' ] );
+		const changes = await rest( 'GET', path( 'get-changes' ) );
+		expect( changes.body.changes[ 0 ] ).toMatchObject( { kind: 'downgrade', after: [ 'editor' ] } );
+
+		const extended = await rest( 'POST', path( 'extend-trial' ), { input: { trial_id: started.body.trial.id, days: 3 } } );
+		expect( extended.body.trial.days_left ).toBe( 8 );
+		const restored = await rest( 'POST', path( 'restore-trial' ), { input: { trial_id: started.body.trial.id } } );
+		expect( restored.body.trial.status ).toBe( 'restored' );
+		expect( roles( 'pat' ) ).toBe( 'administrator' );
+		expect( ( await rest( 'POST', path( 'keep-trial' ), { input: { trial_id: started.body.trial.id } } ) ).status ).toBe( 400 );
+		expect( ( await rest( 'POST', path( 'start-trial' ), { input: { user_id: 1 } } ) ).status ).toBe( 400 );
+	} );
+
+	test( 'a first visit gets a Get started card, a Help tab and a link in the plugin row', async ( { page } ) => {
+		trackingStarted( 3 );
+		await page.goto( SCREEN );
+		const steps = page.locator( '.rrs-steps .axle-step' );
+		await expect( steps ).toHaveCount( 3 );
+		await expect( page.locator( '.rrs-steps .axle-badge--good' ) ).toHaveCount( 0 );
+		await page.getByRole( 'button', { name: 'Dismiss this card' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Dismissed.' );
+		await expect( page.locator( '.rrs-steps' ) ).toHaveCount( 0 );
+		expect( wpEval( "echo get_user_meta( 1, 'role_right_sizer_steps_dismissed', true );" ) ).toBe( '1' );
+
+		await page.locator( '#contextual-help-link' ).click();
+		for ( const tab of [ 'overview', 'recommendations', 'trials', 'changes', 'settings' ] ) {
+			await expect( page.locator( `#tab-link-role-right-sizer-${ tab }` ) ).toBeVisible();
+		}
+
+		await page.goto( '/wp-admin/plugins.php' );
+		await expect( page.locator( 'tr[data-slug="role-right-sizer"] .row-actions, tr[data-plugin^="role-right-sizer/"] .row-actions' ).getByRole( 'link', { name: 'Open Right-Sizer' } ) ).toHaveAttribute( 'href', /page=role-right-sizer/ );
 	} );
 } );
