@@ -179,3 +179,8 @@
 .nav-tab .count {
 	font-weight: 400;
 }
+
+/* Older WordPress draws row checkboxes at 16px: leave room around them for a 24px touch target. */
+.rrs-table .check-column input[type="checkbox"] {
+	margin: 6px 4px;
+}
