@@ -1,63 +1,458 @@
 {
   "$comment": "Screens tests/e2e/a11y.spec.js checks with axe-core. This file belongs to the plugin: apply-template.py only writes it when it is missing. The fields are described in docs/DEVELOPMENT.md.",
-  "include": ["#wpbody-content"],
+  "include": [
+    "#wpbody-content"
+  ],
   "exclude": [],
   "screens": [
     {
       "name": "Users > Right-Sizer during the learning period",
-      "setup": [{ "js": "seed.js", "call": "seed", "args": [12] }],
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed",
+          "args": [
+            12
+          ]
+        }
+      ],
       "url": "/wp-admin/users.php?page=role-right-sizer",
-      "steps": [{ "waitFor": ".rrs-learning" }],
-      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+      "steps": [
+        {
+          "waitFor": ".rrs-learning"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
     },
     {
       "name": "Users > Right-Sizer recommendations with the used capabilities open",
-      "setup": [{ "js": "seed.js", "call": "seed" }, ["role-right-sizer", "report"]],
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
       "url": "/wp-admin/users.php?page=role-right-sizer",
-      "steps": [{ "click": "tr[data-user=\"pat\"] details >> nth=1 >> summary" }],
-      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+      "steps": [
+        {
+          "click": "tr[data-user=\"pat\"] details >> nth=1 >> summary"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
     },
     {
       "name": "Users > Right-Sizer confirmation step",
-      "setup": [{ "js": "seed.js", "call": "seed" }, ["role-right-sizer", "report"]],
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
       "url": "/wp-admin/users.php?page=role-right-sizer",
       "steps": [
-        { "click": "tr[data-user=\"pat\"] input[name=\"users[]\"]" },
-        { "click": "tr[data-user=\"olive\"] input[name=\"users[]\"]" },
-        { "click": "tr.rrs-group[data-role=\"shop_editor\"] input[name=\"groups[]\"]" },
-        { "click": "role=button[name=/Review 3 selected changes/i]" },
-        { "waitFor": "role=button[name=/Apply 3 changes/i]" }
+        {
+          "click": "tr[data-user=\"pat\"] input[name=\"users[]\"]"
+        },
+        {
+          "click": "tr[data-user=\"olive\"] input[name=\"users[]\"]"
+        },
+        {
+          "click": "tr.rrs-group[data-role=\"shop_editor\"] input[name=\"groups[]\"]"
+        },
+        {
+          "click": "role=button[name=/Review 3 selected changes/i]"
+        },
+        {
+          "waitFor": "role=button[name=/Apply 3 changes/i]"
+        }
       ],
-      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
     },
     {
       "name": "Users > Right-Sizer change log with Undo",
-      "setup": [{ "js": "seed.js", "call": "seed" }, ["role-right-sizer", "report"]],
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
       "url": "/wp-admin/users.php?page=role-right-sizer",
       "steps": [
-        { "click": "tr[data-user=\"pat\"] input[name=\"users[]\"]" },
-        { "click": "tr[data-user=\"olive\"] input[name=\"users[]\"]" },
-        { "click": "role=button[name=/Review 2 selected changes/i]" },
-        { "click": "role=button[name=/Apply 2 changes/i]" },
-        { "waitFor": ".rrs-changes" }
+        {
+          "click": "tr[data-user=\"pat\"] input[name=\"users[]\"]"
+        },
+        {
+          "click": "tr[data-user=\"olive\"] input[name=\"users[]\"]"
+        },
+        {
+          "click": "role=button[name=/Review 2 selected changes/i]"
+        },
+        {
+          "click": "role=button[name=/Apply 2 changes/i]"
+        },
+        {
+          "waitFor": ".rrs-changes"
+        }
       ],
-      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
     },
     {
       "name": "Users > Right-Sizer change log, nothing applied yet",
-      "setup": [{ "js": "seed.js", "call": "seed" }, ["role-right-sizer", "report"]],
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
       "url": "/wp-admin/users.php?page=role-right-sizer&tab=changes",
-      "steps": [{ "waitFor": ".rrs-empty" }],
-      "cleanup": [{ "js": "seed.js", "call": "clean" }]
+      "steps": [
+        {
+          "waitFor": ".rrs-empty"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
     },
     {
       "name": "Users > Right-Sizer confirmation step with nothing selected",
       "url": "/wp-admin/users.php?page=role-right-sizer&view=confirm",
-      "steps": [{ "waitFor": ".rrs-confirm .axle-empty" }]
+      "steps": [
+        {
+          "waitFor": ".rrs-confirm .axle-empty"
+        }
+      ]
     },
     {
       "name": "Users > Right-Sizer settings",
       "url": "/wp-admin/users.php?page=role-right-sizer&tab=settings"
+    },
+    {
+      "name": "Users > Right-Sizer Trials tab, nothing tried yet",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=trials",
+      "steps": [
+        {
+          "waitFor": ".rrs-empty"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer trial confirmation step",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "wp": [
+            "user",
+            "get",
+            "pat",
+            "--field=ID"
+          ],
+          "save": "pat"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&view=confirm&trial=1&users[]={pat}",
+      "steps": [
+        {
+          "waitFor": "role=button[name=/Try for 14 days/i]"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer trial started, with Undo",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer",
+      "steps": [
+        {
+          "click": "tr[data-user=\"pat\"] input[name=\"users[]\"]"
+        },
+        {
+          "click": "role=button[name=/Review 1 selected change/i]"
+        },
+        {
+          "click": "role=button[name=/Try for 14 days instead/i]"
+        },
+        {
+          "waitFor": ".notice-success"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer Trials tab with a running trial, denials and a request",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "trialWithDenials"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=trials",
+      "steps": [
+        {
+          "waitFor": ".rrs-trials"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer Trials tab with the restore confirmation open",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "trialWithDenials"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=trials",
+      "steps": [
+        {
+          "click": "summary >> text=Restore now"
+        },
+        {
+          "waitFor": ".axle-confirm"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer Trials tab with a trial that is over",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "trialWithDenials"
+        },
+        {
+          "js": "seed.js",
+          "call": "endTrials"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=trials",
+      "steps": [
+        {
+          "waitFor": ".axle-badge--warning"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer Trials tab with a closed trial",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "wp": [
+            "role-right-sizer",
+            "trial",
+            "start",
+            "pat"
+          ]
+        },
+        {
+          "wp": [
+            "role-right-sizer",
+            "trial",
+            "restore",
+            "1"
+          ]
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=trials",
+      "steps": [
+        {
+          "waitFor": ".rrs-trials"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer change log with the Undo confirmation open",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "wp": [
+            "role-right-sizer",
+            "apply",
+            "pat"
+          ]
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=changes",
+      "steps": [
+        {
+          "click": "summary >> text=Undo"
+        },
+        {
+          "waitFor": ".axle-confirm"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer error notice after a refused action",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=trials&rrs_errors=trial_closed",
+      "steps": [
+        {
+          "waitFor": ".notice-error"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
     }
   ],
   "skip": {}

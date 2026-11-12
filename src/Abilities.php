@@ -67,6 +67,13 @@ final class Abilities implements Service {
 	private Applier $applier;
 
 	/**
+	 * Trials of a smaller role.
+	 *
+	 * @var Trials
+	 */
+	private Trials $trials;
+
+	/**
 	 * Sets up the abilities.
 	 *
 	 * @param Settings    $settings    Settings and limits.
@@ -75,8 +82,10 @@ final class Abilities implements Service {
 	 * @param Report      $report      Saved recommendations.
 	 * @param Changes     $changes     Change log.
 	 * @param Applier     $applier     Applies and undoes changes.
+	 * @param Trials      $trials      Trials of a smaller role.
 	 */
-	public function __construct( Settings $settings, Store $store, Recommender $recommender, Report $report, Changes $changes, Applier $applier ) {
+	public function __construct( Settings $settings, Store $store, Recommender $recommender, Report $report, Changes $changes, Applier $applier, Trials $trials ) {
+		$this->trials      = $trials;
 		$this->settings    = $settings;
 		$this->store       = $store;
 		$this->recommender = $recommender;
@@ -247,7 +256,11 @@ final class Abilities implements Service {
 				),
 			),
 			array( $this, 'get_user_usage' ),
-			$can_manage,
+			function ( $input = null ) use ( $can_manage ): bool {
+				$user = self::find_user( ( (array) $input )['user'] ?? '' );
+
+				return $can_manage() && ( ! $user || Access::can_view_user( $user->ID ) );
+			},
 			array(
 				'readonly'   => true,
 				'idempotent' => true,
@@ -281,7 +294,11 @@ final class Abilities implements Service {
 				),
 			),
 			array( $this, 'apply_recommendation' ),
-			$can_manage,
+			function ( $input = null ) use ( $can_manage ): bool {
+				$user_id = (int) ( ( (array) $input )['user_id'] ?? 0 );
+
+				return $can_manage() && ( ! $user_id || Access::can_manage_user( $user_id ) );
+			},
 			array(
 				'readonly'    => false,
 				'destructive' => true,
@@ -318,10 +335,246 @@ final class Abilities implements Service {
 				),
 			),
 			array( $this, 'undo_change' ),
-			$can_manage,
+			function ( $input = null ) use ( $can_manage ): bool {
+				$change = $this->changes->get( (int) ( ( (array) $input )['change_id'] ?? 0 ) );
+
+				return $can_manage() && ( ! $change || ! isset( $change['user_id'] ) || Access::can_manage_user( (int) $change['user_id'] ) );
+			},
 			array(
 				'readonly'    => false,
 				'destructive' => true,
+				'idempotent'  => false,
+			)
+		);
+
+		$trial_schema     = array(
+			'type'       => 'object',
+			'properties' => array(
+				'id'           => array( 'type' => 'integer' ),
+				'user_id'      => array( 'type' => 'integer' ),
+				'login'        => array( 'type' => 'string' ),
+				'status'       => array(
+					'type' => 'string',
+					'enum' => array( 'active', 'ended', 'kept', 'restored' ),
+				),
+				'started'      => array( 'type' => 'string' ),
+				'ends'         => array( 'type' => 'string' ),
+				'days_left'    => array( 'type' => 'integer' ),
+				'before'       => $caps,
+				'during'       => $caps,
+				'change_id'    => array( 'type' => 'integer' ),
+				'requested'    => array(
+					'type'        => 'string',
+					'description' => 'When the person last asked for their access back. Empty if they never did.',
+				),
+				'denial_count' => array( 'type' => 'integer' ),
+				'denials'      => array(
+					'type'  => 'array',
+					'items' => array(
+						'type'       => 'object',
+						'properties' => array(
+							'label' => array( 'type' => 'string' ),
+							'kind'  => array( 'type' => 'string' ),
+							'cap'   => array( 'type' => 'string' ),
+							'count' => array( 'type' => 'integer' ),
+							'last'  => array( 'type' => 'string' ),
+						),
+					),
+				),
+			),
+		);
+		$trial_id         = array(
+			'type'                 => 'object',
+			'properties'           => array(
+				'trial_id' => array(
+					'type'    => 'integer',
+					'minimum' => 1,
+				),
+			),
+			'required'             => array( 'trial_id' ),
+			'additionalProperties' => false,
+		);
+		$trial_out        = array(
+			'type'       => 'object',
+			'properties' => array( 'trial' => $trial_schema ),
+		);
+		$can_manage_trial = function ( $input = null ) use ( $can_manage ): bool {
+			$trial = $this->trials->get( (int) ( ( (array) $input )['trial_id'] ?? 0 ) );
+
+			return $can_manage() && ( ! $trial || Access::can_manage_user( (int) $trial['user_id'] ) );
+		};
+
+		$this->ability(
+			'get-changes',
+			__( 'Get the change log', 'role-right-sizer' ),
+			__( 'The role changes Role Right-Sizer made, newest first, with what each one replaced and whether it was undone. Changes to accounts you may not edit are left out.', 'role-right-sizer' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'limit' => array(
+						'type'    => 'integer',
+						'minimum' => 1,
+						'maximum' => 200,
+						'default' => 50,
+					),
+				),
+				'additionalProperties' => false,
+				'default'              => array(),
+			),
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'changes' => array(
+						'type'  => 'array',
+						'items' => array_merge(
+							$change,
+							array(
+								'properties' => array_merge(
+									$change['properties'],
+									array(
+										'time'   => array( 'type' => 'string' ),
+										'undone' => array(
+											'type'        => 'string',
+											'description' => 'When it was undone. Empty if it was not.',
+										),
+									)
+								),
+							)
+						),
+					),
+				),
+			),
+			array( $this, 'get_changes' ),
+			$can_manage,
+			array(
+				'readonly'   => true,
+				'idempotent' => true,
+			)
+		);
+
+		$this->ability(
+			'list-trials',
+			__( 'List role trials', 'role-right-sizer' ),
+			__( 'Trials of a smaller role: who is on one, how many days are left and what the person could not do. Trials of accounts you may not edit are left out.', 'role-right-sizer' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'status' => array(
+						'type'        => 'string',
+						'enum'        => array( 'open', 'active', 'ended', 'kept', 'restored' ),
+						'description' => 'open means active or ended. Leave out for every trial.',
+					),
+				),
+				'additionalProperties' => false,
+				'default'              => array(),
+			),
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'trials' => array(
+						'type'  => 'array',
+						'items' => $trial_schema,
+					),
+				),
+			),
+			array( $this, 'list_trials' ),
+			$can_manage,
+			array(
+				'readonly'   => true,
+				'idempotent' => true,
+			)
+		);
+
+		$this->ability(
+			'start-trial',
+			__( 'Start a role trial', 'role-right-sizer' ),
+			__( 'Gives a user their recommended smaller role for a number of days and records what they could not do. The change is logged, and restore-trial gives the old role back. Refused for your own account, the last administrator, anything on the exclude list and accounts that are not active.', 'role-right-sizer' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'user_id' => array(
+						'type'    => 'integer',
+						'minimum' => 1,
+					),
+					'days'    => array(
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'maximum'     => 365,
+						'description' => 'Defaults to 14.',
+					),
+				),
+				'required'             => array( 'user_id' ),
+				'additionalProperties' => false,
+			),
+			$trial_out,
+			array( $this, 'start_trial' ),
+			function ( $input = null ) use ( $can_manage ): bool {
+				return $can_manage() && Access::can_manage_user( (int) ( ( (array) $input )['user_id'] ?? 0 ) );
+			},
+			array(
+				'readonly'    => false,
+				'destructive' => true,
+				'idempotent'  => false,
+			)
+		);
+
+		$this->ability(
+			'restore-trial',
+			__( 'Restore the role after a trial', 'role-right-sizer' ),
+			__( 'Gives the person their old role back and ends the trial.', 'role-right-sizer' ),
+			$trial_id,
+			$trial_out,
+			array( $this, 'restore_trial' ),
+			$can_manage_trial,
+			array(
+				'readonly'    => false,
+				'destructive' => true,
+				'idempotent'  => false,
+			)
+		);
+
+		$this->ability(
+			'extend-trial',
+			__( 'Extend a role trial', 'role-right-sizer' ),
+			__( 'Gives a trial more days, counted from now when its time is up.', 'role-right-sizer' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'trial_id' => array(
+						'type'    => 'integer',
+						'minimum' => 1,
+					),
+					'days'     => array(
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'maximum'     => 365,
+						'description' => 'Defaults to 14.',
+					),
+				),
+				'required'             => array( 'trial_id' ),
+				'additionalProperties' => false,
+			),
+			$trial_out,
+			array( $this, 'extend_trial' ),
+			$can_manage_trial,
+			array(
+				'readonly'    => false,
+				'destructive' => false,
+				'idempotent'  => false,
+			)
+		);
+
+		$this->ability(
+			'keep-trial',
+			__( 'Make a role trial permanent', 'role-right-sizer' ),
+			__( 'Ends the trial and keeps the smaller role. The change stays in the log, where undo-change can still put the old role back.', 'role-right-sizer' ),
+			$trial_id,
+			$trial_out,
+			array( $this, 'keep_trial' ),
+			$can_manage_trial,
+			array(
+				'readonly'    => false,
+				'destructive' => false,
 				'idempotent'  => false,
 			)
 		);
@@ -340,7 +593,7 @@ final class Abilities implements Service {
 		$report = $this->report->get();
 
 		$users = array();
-		foreach ( $learning ? array() : $report['users'] as $recommendation ) {
+		foreach ( $learning ? array() : Access::visible_recommendations( $report['users'] ) as $recommendation ) {
 			$user    = get_userdata( (int) $recommendation['user_id'] );
 			$users[] = array(
 				'user_id'     => (int) $recommendation['user_id'],
@@ -384,6 +637,9 @@ final class Abilities implements Service {
 		$user = self::find_user( ( (array) $input )['user'] ?? '' );
 		if ( ! $user ) {
 			return new \WP_Error( 'role_right_sizer_not_found', __( 'That user does not exist.', 'role-right-sizer' ), array( 'status' => 404 ) );
+		}
+		if ( ! Access::can_view_user( $user->ID ) ) {
+			return new \WP_Error( 'role_right_sizer_forbidden', __( 'Sorry, you are not allowed to see this user.', 'role-right-sizer' ), array( 'status' => 403 ) );
 		}
 
 		$since = time() - $this->settings->window_days() * DAY_IN_SECONDS;
@@ -477,6 +733,161 @@ final class Abilities implements Service {
 	}
 
 	/**
+	 * Ability: the change log.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array
+	 */
+	public function get_changes( $input = null ): array {
+		$limit   = Settings::clamp( ( (array) $input )['limit'] ?? 50, 50, 1, 200 );
+		$changes = array();
+		foreach ( $this->changes->all() as $change ) {
+			if ( isset( $change['user_id'] ) && ! Access::can_view_user( (int) $change['user_id'] ) ) {
+				continue;
+			}
+			$changes[] = array(
+				'id'      => (int) $change['id'],
+				'batch'   => (int) $change['batch'],
+				'kind'    => (string) $change['kind'],
+				'user_id' => (int) ( $change['user_id'] ?? 0 ),
+				'before'  => array_values( (array) ( $change['before'] ?? array() ) ),
+				'after'   => array_values( (array) ( $change['after'] ?? array() ) ),
+				'role'    => (string) ( $change['role'] ?? '' ),
+				'cap'     => (string) ( $change['cap'] ?? '' ),
+				'lost'    => array_values( (array) $change['lost'] ),
+				'time'    => self::iso( (int) $change['time'] ),
+				'undone'  => self::iso( (int) $change['undone'] ),
+			);
+			if ( count( $changes ) >= $limit ) {
+				break;
+			}
+		}
+
+		return array( 'changes' => $changes );
+	}
+
+	/**
+	 * Ability: the trials.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array
+	 */
+	public function list_trials( $input = null ): array {
+		$status = (string) ( ( (array) $input )['status'] ?? '' );
+		$trials = array();
+		foreach ( $this->trials->all() as $trial ) {
+			$open = in_array( $trial['status'], array( 'active', 'ended' ), true );
+			if ( ( 'open' === $status && ! $open ) || ( '' !== $status && 'open' !== $status && $trial['status'] !== $status ) ) {
+				continue;
+			}
+			if ( ! Access::can_view_user( (int) $trial['user_id'] ) ) {
+				continue;
+			}
+			$trials[] = self::trial_output( $trial );
+		}
+
+		return array( 'trials' => $trials );
+	}
+
+	/**
+	 * Ability: starts a trial.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array|\WP_Error
+	 */
+	public function start_trial( $input = null ) {
+		$input  = (array) $input;
+		$result = $this->trials->start( (int) ( $input['user_id'] ?? 0 ), (int) ( $input['days'] ?? 0 ) );
+		if ( is_wp_error( $result ) ) {
+			return new \WP_Error( $result->get_error_code(), $result->get_error_message(), array( 'status' => 400 ) );
+		}
+		$this->report->rebuild();
+
+		return array( 'trial' => self::trial_output( $result ) );
+	}
+
+	/**
+	 * Ability: restores the role after a trial.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array|\WP_Error
+	 */
+	public function restore_trial( $input = null ) {
+		return $this->trial_result( $this->trials->restore( (int) ( ( (array) $input )['trial_id'] ?? 0 ) ) );
+	}
+
+	/**
+	 * Ability: extends a trial.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array|\WP_Error
+	 */
+	public function extend_trial( $input = null ) {
+		$input = (array) $input;
+
+		return $this->trial_result( $this->trials->extend( (int) ( $input['trial_id'] ?? 0 ), (int) ( $input['days'] ?? 0 ) ) );
+	}
+
+	/**
+	 * Ability: makes a trial permanent.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array|\WP_Error
+	 */
+	public function keep_trial( $input = null ) {
+		return $this->trial_result( $this->trials->keep( (int) ( ( (array) $input )['trial_id'] ?? 0 ) ) );
+	}
+
+	/**
+	 * A trial result as ability output, or its error as a 400.
+	 *
+	 * @param array|\WP_Error $result The trial, or why not.
+	 * @return array|\WP_Error
+	 */
+	private function trial_result( $result ) {
+		if ( is_wp_error( $result ) ) {
+			return new \WP_Error( $result->get_error_code(), $result->get_error_message(), array( 'status' => 400 ) );
+		}
+
+		return array( 'trial' => self::trial_output( $result ) );
+	}
+
+	/**
+	 * A trial as ability output.
+	 *
+	 * @param array $trial The trial.
+	 * @return array
+	 */
+	private static function trial_output( array $trial ): array {
+		$denials = array();
+		foreach ( (array) $trial['denials'] as $denial ) {
+			$denials[] = array(
+				'label' => (string) $denial['label'],
+				'kind'  => (string) $denial['kind'],
+				'cap'   => (string) $denial['cap'],
+				'count' => (int) $denial['count'],
+				'last'  => self::iso( (int) $denial['last'] ),
+			);
+		}
+
+		return array(
+			'id'           => (int) $trial['id'],
+			'user_id'      => (int) $trial['user_id'],
+			'login'        => (string) $trial['login'],
+			'status'       => (string) $trial['status'],
+			'started'      => self::iso( (int) $trial['started'] ),
+			'ends'         => self::iso( (int) $trial['ends'] ),
+			'days_left'    => Trials::days_left( $trial ),
+			'before'       => array_values( (array) $trial['before'] ),
+			'during'       => array_values( (array) $trial['after'] ),
+			'change_id'    => (int) $trial['change_id'],
+			'requested'    => self::iso( (int) $trial['requested'] ),
+			'denial_count' => Trials::denial_total( $trial ),
+			'denials'      => $denials,
+		);
+	}
+
+	/**
 	 * The preview Agent Governance shows before someone approves a held call
 	 * to apply-recommendation or undo-change. Works it out without changing anything.
 	 *
@@ -495,6 +906,10 @@ final class Abilities implements Service {
 				return $this->preview_apply( $input );
 			case self::CATEGORY . '/undo-change':
 				return $this->preview_undo( $input );
+			case self::CATEGORY . '/start-trial':
+				return $this->preview_start_trial( $input );
+			case self::CATEGORY . '/restore-trial':
+				return $this->preview_restore_trial( $input );
 		}
 
 		return $preview;
@@ -626,6 +1041,74 @@ final class Abilities implements Service {
 			/* translators: %s: number of changes. */
 			'summary' => sprintf( _n( 'Undoes %s Role Right-Sizer change and puts back what it took away.', 'Undoes %s Role Right-Sizer changes and puts back what they took away.', count( $rows ), 'role-right-sizer' ), number_format_i18n( count( $rows ) ) ),
 			'changes' => $rows,
+		);
+	}
+
+	/**
+	 * Preview of start-trial.
+	 *
+	 * @param array $input Ability input.
+	 * @return array
+	 */
+	private function preview_start_trial( array $input ): array {
+		$user           = get_userdata( (int) ( $input['user_id'] ?? 0 ) );
+		$recommendation = $user ? $this->recommender->for_user( $user, time(), Recommender::admin_count() ) : null;
+		if ( ! $user || ! $recommendation || ! in_array( $recommendation['type'], $this->trials->types(), true ) ) {
+			return array( 'summary' => __( 'This person cannot be put on a trial, so this call will fail.', 'role-right-sizer' ) );
+		}
+
+		$days = (int) ( $input['days'] ?? 0 ) > 0 ? (int) $input['days'] : $this->trials->days();
+
+		return array(
+			'summary' => sprintf(
+				/* translators: 1: user name, 2: username, 3: roles now, 4: recommended role, 5: number of days. */
+				_n( 'Moves %1$s (%2$s) from %3$s to %4$s for %5$s day. Whatever they cannot do is recorded. Restoring gives the old role back.', 'Moves %1$s (%2$s) from %3$s to %4$s for %5$s days. Whatever they cannot do is recorded. Restoring gives the old role back.', $days, 'role-right-sizer' ),
+				$user->display_name,
+				$user->user_login,
+				Screen::roles_label( $recommendation['current'] ),
+				Screen::role_label( $recommendation['proposed'] ),
+				number_format_i18n( $days )
+			),
+			'object'  => array(
+				'type'  => 'user',
+				'id'    => $user->ID,
+				'label' => $user->display_name,
+				'url'   => (string) get_edit_user_link( $user->ID ),
+			),
+			'changes' => array(
+				array(
+					'field'  => __( 'Role', 'role-right-sizer' ),
+					'before' => Screen::roles_label( $recommendation['current'] ),
+					'after'  => Screen::role_label( $recommendation['proposed'] ),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Preview of restore-trial.
+	 *
+	 * @param array $input Ability input.
+	 * @return array
+	 */
+	private function preview_restore_trial( array $input ): array {
+		$trial = $this->trials->get( (int) ( $input['trial_id'] ?? 0 ) );
+		if ( ! $trial || ! in_array( $trial['status'], array( 'active', 'ended' ), true ) ) {
+			return array( 'summary' => __( 'That trial is not open, so this call will fail.', 'role-right-sizer' ) );
+		}
+
+		$user = get_userdata( (int) $trial['user_id'] );
+
+		return array(
+			/* translators: %s: user name. */
+			'summary' => sprintf( __( 'Gives %s their old role back and ends the trial.', 'role-right-sizer' ), $user ? $user->display_name : (string) $trial['login'] ),
+			'changes' => array(
+				array(
+					'field'  => __( 'Role', 'role-right-sizer' ),
+					'before' => Screen::roles_label( $user ? array_values( (array) $user->roles ) : (array) $trial['after'] ),
+					'after'  => Screen::roles_label( (array) $trial['before'] ),
+				),
+			),
 		);
 	}
 

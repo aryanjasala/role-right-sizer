@@ -14,6 +14,7 @@ use AryanX\Axle\RoleRightSizer\Privacy;
 use AryanX\Axle\RoleRightSizer\Recommender;
 use AryanX\Axle\RoleRightSizer\Report;
 use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Trials;
 use AryanX\Axle\RoleRightSizer\Usage\Store;
 use Brain\Monkey\Actions;
 use Brain\Monkey\Functions;
@@ -57,12 +58,15 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 			}
 		);
 		Functions\when( 'wp_register_ability_category' )->justReturn( null );
+		Functions\when( 'wp_schedule_event' )->justReturn( true );
+		Functions\when( 'translate_user_role' )->returnArg();
+		Functions\when( 'number_format_i18n' )->alias( 'strval' );
 	}
 
 	/**
 	 * The plugin's parts, wired like Plugin does.
 	 *
-	 * @return array{0: Abilities, 1: Privacy, 2: Changes, 3: Report}
+	 * @return array{0: Abilities, 1: Privacy, 2: Changes, 3: Report, 4: Trials}
 	 */
 	private function parts(): array {
 		$settings    = new Settings();
@@ -72,7 +76,9 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 		$changes     = new Changes();
 		$applier     = new Applier( $settings, $recommender, $report, $changes );
 
-		return array( new Abilities( $settings, $store, $recommender, $report, $changes, $applier ), new Privacy( $store, $changes ), $changes, $report );
+		$trials      = new Trials( $settings, $applier, $recommender, $report );
+
+		return array( new Abilities( $settings, $store, $recommender, $report, $changes, $applier, $trials ), new Privacy( $store, $changes, $trials ), $changes, $report, $trials );
 	}
 
 	public function test_the_exporter_covers_activity_usage_and_changes(): void {
@@ -102,11 +108,11 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 		$this->assertSame( array(), $changes->all() );
 	}
 
-	public function test_four_abilities_are_registered_as_public_with_the_right_annotations(): void {
+	public function test_the_abilities_are_registered_as_public_with_the_right_annotations(): void {
 		list( $abilities ) = $this->parts();
 		$abilities->register_abilities();
 
-		$this->assertSame( array( 'role-right-sizer/get-recommendations', 'role-right-sizer/get-user-usage', 'role-right-sizer/apply-recommendation', 'role-right-sizer/undo-change' ), array_keys( $this->registered ) );
+		$this->assertSame( array( 'role-right-sizer/get-recommendations', 'role-right-sizer/get-user-usage', 'role-right-sizer/apply-recommendation', 'role-right-sizer/undo-change', 'role-right-sizer/get-changes', 'role-right-sizer/list-trials', 'role-right-sizer/start-trial', 'role-right-sizer/restore-trial', 'role-right-sizer/extend-trial', 'role-right-sizer/keep-trial' ), array_keys( $this->registered ) );
 		foreach ( $this->registered as $args ) {
 			$this->assertTrue( $args['meta']['public'] );
 			$this->assertTrue( $args['meta']['mcp']['public'] );
@@ -221,5 +227,140 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 		$this->assertNull( $abilities->dry_run( null, $call( 'get-recommendations', array() ) ) );
 		$this->assertSame( array( 'summary' => 'Theirs' ), $abilities->dry_run( array( 'summary' => 'Theirs' ), $call( 'undo-change', array( 'change_id' => 1 ) ) ) );
 		$this->assertNull( $abilities->dry_run( null, array( 'source' => 'rest', 'target' => 'role-right-sizer/undo-change' ) ) );
+	}
+
+	public function test_someone_who_may_not_edit_an_account_gets_no_details_about_it(): void {
+		list( $abilities ) = $this->parts();
+		$this->no_access = array( 5 );
+
+		$this->assertSame( array(), $abilities->get_recommendations()['users'] );
+
+		$usage = $abilities->get_user_usage( array( 'user' => 'pat' ) );
+		$this->assertSame( 403, $usage->get_error_data()['status'] );
+
+		$abilities->register_abilities();
+		$this->assertFalse( call_user_func( $this->registered['role-right-sizer/get-user-usage']['permission_callback'], array( 'user' => 'pat' ) ) );
+		$this->assertTrue( call_user_func( $this->registered['role-right-sizer/get-user-usage']['permission_callback'], array( 'user' => 'admin' ) ) );
+		$this->assertFalse( call_user_func( $this->registered['role-right-sizer/apply-recommendation']['permission_callback'], array( 'user_id' => 5 ) ) );
+	}
+
+	public function test_the_change_log_ability_leaves_out_accounts_the_viewer_may_not_see(): void {
+		list( $abilities ) = $this->parts();
+		$abilities->apply_recommendation( array( 'user_id' => 5 ) );
+
+		$this->assertCount( 1, $abilities->get_changes( array() )['changes'] );
+		$this->assertSame( 'downgrade', $abilities->get_changes( array() )['changes'][0]['kind'] );
+
+		$this->no_access = array( 5 );
+		$this->assertSame( array(), $abilities->get_changes( array() )['changes'] );
+	}
+
+	public function test_an_agent_runs_a_trial_from_start_to_restore(): void {
+		list( $abilities ) = $this->parts();
+
+		$started = $abilities->start_trial( array( 'user_id' => 5, 'days' => 7 ) );
+		$id      = $started['trial']['id'];
+		$this->assertSame( 'active', $started['trial']['status'] );
+		$this->assertSame( array( 'editor' ), $this->users[5]->roles );
+		$this->assertSame( 7, $started['trial']['days_left'] );
+
+		$this->assertCount( 1, $abilities->list_trials( array( 'status' => 'open' ) )['trials'] );
+		$this->assertSame( array(), $abilities->list_trials( array( 'status' => 'kept' ) )['trials'] );
+		$this->assertSame( 'role_right_sizer_trial_exists', $abilities->start_trial( array( 'user_id' => 5 ) )->get_error_code() );
+
+		$extended = $abilities->extend_trial( array( 'trial_id' => $id, 'days' => 3 ) );
+		$this->assertGreaterThanOrEqual( 10, $extended['trial']['days_left'] );
+
+		$restored = $abilities->restore_trial( array( 'trial_id' => $id ) );
+		$this->assertSame( 'restored', $restored['trial']['status'] );
+		$this->assertSame( array( 'administrator' ), $this->users[5]->roles );
+		$this->assertSame( 400, $abilities->keep_trial( array( 'trial_id' => $id ) )->get_error_data()['status'] );
+	}
+
+	public function test_trials_of_accounts_the_viewer_may_not_manage_stay_out_of_reach(): void {
+		list( $abilities, , , , $trials ) = $this->parts();
+		$trials->start( 5 );
+		$abilities->register_abilities();
+
+		$this->no_access = array( 5 );
+		$this->assertSame( array(), $abilities->list_trials( array() )['trials'] );
+		$this->assertFalse( call_user_func( $this->registered['role-right-sizer/start-trial']['permission_callback'], array( 'user_id' => 5 ) ) );
+		$this->assertFalse( call_user_func( $this->registered['role-right-sizer/restore-trial']['permission_callback'], array( 'trial_id' => 1 ) ) );
+		$this->assertFalse( call_user_func( $this->registered['role-right-sizer/keep-trial']['permission_callback'], array( 'trial_id' => 1 ) ) );
+	}
+
+	public function test_trial_abilities_have_the_right_annotations(): void {
+		list( $abilities ) = $this->parts();
+		$abilities->register_abilities();
+
+		$annotations = static function ( array $registered, string $name ): array {
+			return $registered[ 'role-right-sizer/' . $name ]['meta']['annotations'];
+		};
+		$this->assertTrue( $annotations( $this->registered, 'list-trials' )['readonly'] );
+		$this->assertTrue( $annotations( $this->registered, 'get-changes' )['readonly'] );
+		$this->assertTrue( $annotations( $this->registered, 'start-trial' )['destructive'] );
+		$this->assertTrue( $annotations( $this->registered, 'restore-trial' )['destructive'] );
+		$this->assertFalse( $annotations( $this->registered, 'extend-trial' )['destructive'] );
+		$this->assertFalse( $annotations( $this->registered, 'keep-trial' )['readonly'] );
+	}
+
+	public function test_agent_governance_previews_trial_calls(): void {
+		list( $abilities ) = $this->parts();
+		Functions\when( 'get_edit_user_link' )->justReturn( 'https://example.com/wp-admin/user-edit.php?user_id=5' );
+		$this->current_user = 0;
+		$call               = static function ( string $name, array $input ): array {
+			return array(
+				'source' => 'ability',
+				'target' => 'role-right-sizer/' . $name,
+				'method' => 'POST',
+				'kind'   => 'destructive',
+				'input'  => $input,
+			);
+		};
+
+		$start = $abilities->dry_run( null, $call( 'start-trial', array( 'user_id' => 5 ) ) );
+		$this->assertStringContainsString( 'for 14 days', $start['summary'] );
+		$this->assertSame( array( 'administrator' ), $this->users[5]->roles );
+
+		$none = $abilities->dry_run( null, $call( 'start-trial', array( 'user_id' => 99 ) ) );
+		$this->assertStringContainsString( 'will fail', $none['summary'] );
+
+		$abilities->start_trial( array( 'user_id' => 5 ) );
+		$restore = $abilities->dry_run( null, $call( 'restore-trial', array( 'trial_id' => 1 ) ) );
+		$this->assertStringContainsString( 'old role back', $restore['summary'] );
+		$this->assertSame( array( 'editor' ), $this->users[5]->roles );
+	}
+
+	public function test_the_exporter_and_eraser_cover_trials(): void {
+		list( $abilities, $privacy, , , $trials ) = $this->parts();
+		$this->add_user( 1, array( 'administrator' ), array( 'user_login' => 'admin', 'user_email' => 'admin@example.com' ) );
+		$this->users[5]->user_email = 'pat@example.com';
+		Functions\when( 'get_user_by' )->alias(
+			function ( $field, $value ) {
+				foreach ( $this->users as $user ) {
+					if ( 'email' === $field && $user->user_email === $value ) {
+						return $user;
+					}
+				}
+				return false;
+			}
+		);
+		$trial = $trials->start( 5 );
+		$trials->add_denials( $trial['id'], array( array( 'key' => 'screen:plugins.php', 'kind' => 'screen', 'label' => 'Tried to open Plugins', 'cap' => 'activate_plugins' ) ) );
+
+		$export = $privacy->export( 'pat@example.com' );
+		$groups = array_column( $export['data'], 'group_id' );
+		$this->assertContains( 'role-right-sizer-trials', $groups );
+		$values = array();
+		foreach ( $export['data'] as $item ) {
+			foreach ( $item['data'] as $row ) {
+				$values[] = $row['value'];
+			}
+		}
+		$this->assertContains( 'Tried to open Plugins (1 time)', $values );
+
+		$privacy->erase( 'pat@example.com' );
+		$this->assertSame( array(), $trials->all() );
+		$this->assertNotNull( $abilities );
 	}
 }

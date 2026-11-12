@@ -1,5 +1,23 @@
 # Reference
 
+## Trials
+
+**Try for 14 days** sits next to Apply on every smaller-role recommendation, and on the review step. It gives the person the recommended role the same way Apply does, through the change log, so Undo works. Only accounts that are still in use can be tried (`role_right_sizer_trial_types`), and a person has one open trial at a time.
+
+While a trial is open, only that person is watched, and only for refusals that mean something:
+
+| What happened | Shown as |
+| --- | --- |
+| An admin screen the menu refused (`admin_page_access_denied`) | "Tried to open Plugins" |
+| A `wp_die()` with a 401 or 403 after a capability check failed, in a page or an AJAX call | "Could not edit a page by another author" |
+| A REST request that changes something and was answered 401 or 403 | "Could not create categories through the REST API", or the capability words when a check failed |
+
+Menus that hide entries, checks that decide what to show, `GET` requests and an expired nonce are not walls. The same wall is grouped and counted ("3 times, last 2 hours ago"). Nothing is written while the request runs: the refusals are saved on `shutdown`.
+
+At a wall the person sees "Your access was reduced 3 days ago as a trial. Ask for it back." with a **Request my access back** button. It emails whoever started the trial (or the site admin address for WP-CLI) once a day at most. REST errors carry the same sentence under `role_right_sizer_trial`.
+
+On **Users > Right-Sizer > Trials** you can restore the old role at any time, extend the trial, or make the smaller role permanent. Restore and Make permanent ask first, in place. When the time is up the person keeps the smaller role and the trial waits for a decision, and whoever started it gets an email. With the setting "Make the smaller role permanent" a trial that ended with no denials closes on its own. A trial with denials is never closed on its own. Undoing the change from the Changes tab also closes the trial. Site Health notes trials that wait for a decision.
+
 ## How usage is recorded
 
 Everything is collected in memory during a request and written once, on `shutdown`. The same capability is written at most once an hour per user (`role_right_sizer_record_interval`), so a busy editor costs a few user meta writes an hour. Only capabilities the user really has are recorded, so a hook that fires for everyone cannot make a role look needed.
@@ -57,7 +75,8 @@ The report is built 100 users at a time. A build runs up to 20 batches in the re
 
 | Hook | Type | Use |
 | --- | --- | --- |
-| `role_right_sizer_capability` | filter | `( string $capability )`. Who may see and apply recommendations, on the screen, the CSV and the abilities. Default `promote_users` |
+| `role_right_sizer_capability` | filter | `( string $capability )`. Who may open the screen, the CSV and the abilities. Default `promote_users`. Details about one account also need `edit_user` for that account, and changing it needs `promote_user` |
+| `role_right_sizer_can_view_user` | filter | `( bool $allowed, int $user_id )`. Whether the current user may see capabilities, usage, changes and trials of an account. Default whether they may edit it. WP-CLI always may |
 | `role_right_sizer_hook_capability_map` | filter | `( array $map )`. Hook name => capability, list of capabilities, or a callable that gets the hook's arguments and returns capabilities. Read on `init` |
 | `role_right_sizer_screen_capability` | filter | `( string $cap, WP_Screen\|null $screen )`. The capability an admin screen visit counts as. `''` records nothing |
 | `role_right_sizer_ignored_capabilities` | filter | `( string[] $caps )`. Never counted as used, lost or unused. Default `exist` and `level_0` to `level_10` |
@@ -79,12 +98,32 @@ The report is built 100 users at a time. A build runs up to 20 batches in the re
 | `role_right_sizer_recommendation` | filter | `( array $recommendation, WP_User $user )`. Return null to drop it, or change `proposed` to another role. The lost capabilities are worked out again, and the last administrator check still runs after it |
 | `role_right_sizer_build_batch_size` | filter | `( int $size )`. Users per batch of the report build. Default 100, 10 to 500 |
 | `role_right_sizer_log_size` | filter | `( int $size )`. Changes the log keeps. Default 500, 10 to 5000 |
+| `role_right_sizer_trial_days` | filter | `( int $days )`. How long a trial lasts, and how many days an extension adds. Default 14, 1 to 365 |
+| `role_right_sizer_trial_types` | filter | `( string[] $types )`. Recommendation types that can be tried first. Default `downgrade`. Others: `dormant`, `never` |
+| `role_right_sizer_trial_end_action` | filter | `( string $action )`. What happens when a trial ends with no denials: `ask` (default) or `keep`. A trial with denials is never closed on its own |
+| `role_right_sizer_trial_denial` | filter | `( array\|null $denial, array\|null $trial )`. A refusal before it is recorded: `key`, `kind` (`screen`, `rest`, `action`), `label`, `cap`. Return null to leave it out |
+| `role_right_sizer_trial_denial_limit` | filter | `( int $limit )`. Different denials one trial keeps, oldest first out. Default 50, 5 to 500 |
+| `role_right_sizer_trial_cap_labels` | filter | `( string[] $labels )`. Capability => words for what the person could not do |
+| `role_right_sizer_trial_screen_titles` | filter | `( string[] $titles )`. Admin file or plugin page => name used in "Tried to open ..." |
+| `role_right_sizer_trial_message` | filter | `( string $text, array\|null $trial, bool $html )`. The sentence the person sees at a wall. Default "Your access was reduced ... as a trial. Ask for it back." |
+| `role_right_sizer_trial_wall` | filter | `( string $html, array $trial )`. The HTML added to the page they see, with the request button |
+| `role_right_sizer_trial_request_interval` | filter | `( int $seconds )`. How long the person waits before asking again. Default one day, 0 to 30 days |
+| `role_right_sizer_trial_recipients` | filter | `( string[] $emails, array $trial )`. Who is emailed about a trial. Default whoever started it, or the site admin address |
+| `role_right_sizer_trial_email` | filter | `( array\|false $email, string $event, array $trial )`. The email (`to`, `subject`, `message`) for `access_requested` or `ended`. Return false to send nothing |
+| `role_right_sizer_trial_retention_days` | filter | `( int $days )`. How long a closed trial and its denials are kept. Default 365 |
 | `role_right_sizer_capability_used` | action | `( string $cap, int $user_id, string $source )`. The first time in a request that a user uses a capability. `$source` is the hook name, `screen` or `rest` |
 | `role_right_sizer_recommendations_built` | action | `( array $report )`. A report build finished. `users` holds the recommendations by user ID, `roles` the unused capabilities |
 | `role_right_sizer_before_apply` | action | `( array $change, WP_User\|null $user )`. Right before a role change, or before a capability is removed from a role (`$user` is null then) |
 | `role_right_sizer_applied` | action | `( array $change )`. A change was made and logged. `$change['id']` undoes it |
 | `role_right_sizer_undone` | action | `( array $change )`. A change was undone |
 | `role_right_sizer_usage_forgotten` | action | `( int $user_id )`. A user's usage was deleted, by `wp role-right-sizer forget` or the personal data eraser |
+| `role_right_sizer_trial_started` | action | `( array $trial )`. A trial started. The person already has the smaller role |
+| `role_right_sizer_trial_denied` | action | `( array $denial, array $trial )`. A person on trial hit a wall |
+| `role_right_sizer_trial_access_requested` | action | `( array $trial )`. The person asked for their access back |
+| `role_right_sizer_trial_ended` | action | `( array $trial )`. A trial's time is up and it waits for a decision |
+| `role_right_sizer_trial_extended` | action | `( array $trial, int $days )`. A trial was extended |
+| `role_right_sizer_trial_kept` | action | `( array $trial, bool $auto )`. The smaller role was made permanent. `$auto` is true when Right-Sizer did it because there were no denials |
+| `role_right_sizer_trial_restored` | action | `( array $trial )`. The old role was given back and the trial closed |
 
 ```php
 // WooCommerce: an order edited in wp-admin proves the shop manager capability.
@@ -106,6 +145,8 @@ add_action( 'role_right_sizer_applied', function ( $change ) {
 } );
 ```
 
+A trial is an array with `id`, `user_id`, `login`, `by`, `started`, `ends`, `change_id` and `batch` (the change in the log, so Undo works), `before`, `after`, `lost`, `status` (`active`, `ended`, `kept` or `restored`), `closed`, `auto`, `requested` and `denials` (`key => [ kind, label, cap, count, first, last ]`).
+
 A change is an array with `id`, `batch`, `time`, `by` (user ID, 0 for WP-CLI), `kind` (`downgrade`, `dormant`, `never` or `unused_cap`), `lost`, `undone`, and either `user_id`, `login`, `before` and `after` (role lists) or `role` and `cap`.
 
 ### JavaScript hooks
@@ -116,6 +157,9 @@ The recommendations screen has a small script for the review bar and the group c
 | --- | --- | --- |
 | `roleRightSizer.reviewLabel` | filter | `( label, count, form )`. The text of the review button for this many selected changes |
 | `roleRightSizer.selectionChanged` | action | `( count, form )`. What is ticked changed |
+| `roleRightSizer.announce` | filter | `( message, notice )`. The text read out to screen readers when a result notice shows. An empty string says nothing |
+| `roleRightSizer.confirmOpened` | action | `( details )`. An in-place confirmation (Undo, Restore now, Make permanent) opened |
+| `roleRightSizer.confirmClosed` | action | `( details )`. It closed |
 
 ```js
 wp.hooks.addFilter( 'roleRightSizer.reviewLabel', 'my-plugin', ( label, count ) => ( count > 20 ? label + ' (that is a lot)' : label ) );
@@ -123,7 +167,7 @@ wp.hooks.addFilter( 'roleRightSizer.reviewLabel', 'my-plugin', ( label, count ) 
 
 ## Abilities
 
-On WordPress 6.9 and later, Role Right-Sizer registers [abilities](https://developer.wordpress.org/apis/abilities/), which AI agents find and run through the [MCP adapter](https://github.com/WordPress/mcp-adapter) and anything else through the REST API under `/wp-abilities/v1/`. Each one is marked public, which the MCP adapter needs before it lists an ability. All four need the Role Right-Sizer capability, and the same protections apply as on the screen.
+On WordPress 6.9 and later, Role Right-Sizer registers [abilities](https://developer.wordpress.org/apis/abilities/), which AI agents find and run through the [MCP adapter](https://github.com/WordPress/mcp-adapter) and anything else through the REST API under `/wp-abilities/v1/`. Each one is marked public, which the MCP adapter needs before it lists an ability. All of them need the Role Right-Sizer capability, and the same protections apply as on the screen. Abilities that are about one account also check that you may edit (or, to change a role, promote) that account.
 
 | Ability | Does |
 | --- | --- |
@@ -131,8 +175,14 @@ On WordPress 6.9 and later, Role Right-Sizer registers [abilities](https://devel
 | `role-right-sizer/get-user-usage` | Read-only. For `user` (ID, username or email): every capability and ability with first and last use and whether it is in the window, last login and activity, and the recommendation |
 | `role-right-sizer/apply-recommendation` | Destructive, so the REST API runs it with `POST`. Applies the recommendation for `user_id`, or removes `capability` from `role`. Returns the logged change. Refused (400) for your own account, the last administrator and the exclude list |
 | `role-right-sizer/undo-change` | Destructive. Undoes `change_id`, or its whole batch with `batch: true` |
+| `role-right-sizer/get-changes` | Read-only. The change log, newest first, up to `limit`. Changes to accounts you may not edit are left out |
+| `role-right-sizer/list-trials` | Read-only. Trials, optionally only `open` (active or over and waiting), `active`, `ended`, `kept` or `restored`: who, days left, the roles, whether they asked for access back, and every denial with its count |
+| `role-right-sizer/start-trial` | Destructive. Gives `user_id` their recommended smaller role for `days` (default 14) and returns the trial. Refused (400) for your own account, the last administrator, the exclude list and accounts that are not in use |
+| `role-right-sizer/restore-trial` | Destructive. Gives the person their old role back and closes the trial |
+| `role-right-sizer/extend-trial` | Adds `days` to a trial, counted from now when its time is up |
+| `role-right-sizer/keep-trial` | Makes the smaller role permanent. The change stays in the log. Refused (400) for a trial that is over. Agents cannot decide a trial any other way |
 
-When [Agent Governance](https://github.com/aryanjasala/agent-governance) holds an agent's call to `apply-recommendation` or `undo-change`, Role Right-Sizer fills in its preview through `agent_governance_dry_run`: who moves from which role to which, the capabilities lost, or what an undo puts back. Nothing changes while the preview is built.
+When [Agent Governance](https://github.com/aryanjasala/agent-governance) holds an agent's call to `apply-recommendation`, `undo-change`, `start-trial` or `restore-trial`, Role Right-Sizer fills in its preview through `agent_governance_dry_run`: who moves from which role to which, the capabilities lost, or what an undo puts back. Nothing changes while the preview is built.
 
 ## WP-CLI
 
@@ -144,11 +194,18 @@ wp role-right-sizer apply --all [--include-plugin-caps] [--dry-run] [--yes]
 wp role-right-sizer changes [--format=...]
 wp role-right-sizer undo <change-id> [--batch]
 wp role-right-sizer forget <user>
+wp role-right-sizer settings [--dormant-action=remove|fallback] [--fallback-role=<role>] [--trial-end-action=ask|keep]
+wp role-right-sizer trial start <user>... [--days=<days>]
+wp role-right-sizer trial list [--status=open|active|ended|kept|restored] [--format=...]
+wp role-right-sizer trial denials <trial-id> [--format=...]
+wp role-right-sizer trial restore <trial-id>
+wp role-right-sizer trial extend <trial-id> [--days=<days>]
+wp role-right-sizer trial keep <trial-id>
 ```
 
 `report` builds the recommendations first unless `--cached` is given. `--all-users` lists every user in the columns of the CSV download. `report` lists unused capabilities with their `owner` and `owner_active`. `apply --all` applies every user and role recommendation as one batch, except capabilities that belong to an active plugin, post type or taxonomy; it names those and leaves them alone unless you add `--include-plugin-caps`. Users can be IDs, usernames or email addresses. WP-CLI runs without a logged-in user unless you pass `--user`, so the "not your own account" rule only applies with `--user`. The last administrator rule always applies.
 
-Settings live in the `role_right_sizer_settings` option: `wp option update role_right_sizer_settings '{"dormant_action":"fallback","fallback_role":"subscriber","excluded_users":[],"excluded_roles":[]}' --format=json`.
+`settings` shows the settings, or changes the ones you pass and rebuilds the recommendations. They live in the `role_right_sizer_settings` option. The excluded users and roles are changed on the Settings tab or with `wp option`.
 
 ## PHP API
 
@@ -176,13 +233,16 @@ $plugin->applier()->undo_batch( $batch );
 | `role_right_sizer_settings` option | Dormant action, fallback role, excluded users and roles |
 | `role_right_sizer_report` option | The last report and the state of a build in progress |
 | `role_right_sizer_changes` option | The change log, newest first, at most 500 changes |
+| `role_right_sizer_trials` option | The trials with their denials, newest first. Closed trials go after a year. Not autoloaded |
+| `{prefix}role_right_sizer_trial` user option | The ID of the open trial of a person, so only they are watched. Removed when the trial closes |
+| `role_right_sizer_steps_dismissed` user meta | Set when someone dismisses the Get started card |
 | `role_right_sizer_capability_history` option | When each role gained each capability, and the plugin folder that added it when known: `role => [ cap => [ first_seen, folder ] ]`. Updated when the roles change and on every report build. Not autoloaded |
 
-`{prefix}` is the site's table prefix, such as `wp_` or `wp_2_`. The cron events are `role_right_sizer_daily` and `role_right_sizer_build`. Deactivating stops them. Uninstalling removes all of the above on every site of a network. Roles and capabilities stay as they are: applied changes are not undone.
+`{prefix}` is the site's table prefix, such as `wp_` or `wp_2_`. The cron events are `role_right_sizer_daily`, `role_right_sizer_build` and, while a trial is open, `role_right_sizer_trial_check` (hourly). Deactivating stops them. Uninstalling removes all of the above on every site of a network. Roles and capabilities stay as they are: applied changes are not undone.
 
 ## Privacy
 
-The usage record and the change log are personal data: when someone was active and what they did. They take part in **Tools > Export Personal Data** and **Tools > Erase Personal Data**. Erasing deletes the usage record and the changes to that person's account, and keeps changes they made without their name. **Settings > Privacy** gets suggested text.
+The usage record, the change log and the trials are personal data: when someone was active, what they did, and what they could not do during a trial. They take part in **Tools > Export Personal Data** and **Tools > Erase Personal Data**. Erasing deletes the usage record, the changes to that person's account and their trials, and keeps changes and trials they started without their name. Closed trials are removed after a year (`role_right_sizer_trial_retention_days`). **Settings > Privacy** gets suggested text.
 
 ## Multisite
 

@@ -9,6 +9,10 @@
  * - filter roleRightSizer.reviewLabel ( label, count, form ): the text of the
  *   review button for this many selected changes.
  * - action roleRightSizer.selectionChanged ( count, form ): what is ticked changed.
+ * - filter roleRightSizer.announce ( message, notice ): the text read out to screen
+ *   readers when a result notice shows. Return an empty string to say nothing.
+ * - action roleRightSizer.confirmOpened ( details ): an in-place confirmation opened.
+ * - action roleRightSizer.confirmClosed ( details ): an in-place confirmation closed.
  */
 ( function () {
 	'use strict';
@@ -125,11 +129,96 @@
 		}, 0 );
 	} );
 
+	/**
+	 * Reads the result of the last action out to screen readers.
+	 */
+	function announce() {
+		const speak = window.wp && window.wp.a11y ? window.wp.a11y.speak : null;
+		if ( ! speak ) {
+			return;
+		}
+
+		document.querySelectorAll( '.rrs-notice' ).forEach( function ( notice ) {
+			const text = notice.querySelector( '.rrs-notice-text' );
+			if ( ! text ) {
+				return;
+			}
+			let message = text.textContent.trim();
+			const h = hooks();
+			if ( h ) {
+				message = h.applyFilters( 'roleRightSizer.announce', message, notice );
+			}
+			if ( message ) {
+				speak( message, notice.classList.contains( 'notice-error' ) ? 'assertive' : 'polite' );
+			}
+		} );
+	}
+
+	/**
+	 * Moves focus into an in-place confirmation when it opens, and back to its button when it closes.
+	 *
+	 * @param {HTMLDetailsElement} details The confirmation.
+	 */
+	function confirmToggled( details ) {
+		const h = hooks();
+		if ( details.open ) {
+			// Only one confirmation is open at a time.
+			document.querySelectorAll( 'details.rrs-confirm-inline[open]' ).forEach( function ( other ) {
+				if ( other !== details ) {
+					other.open = false;
+				}
+			} );
+			const first = details.querySelector( '.axle-confirm button' );
+			if ( first ) {
+				first.focus();
+			}
+			if ( h ) {
+				h.doAction( 'roleRightSizer.confirmOpened', details );
+			}
+		} else if ( h ) {
+			h.doAction( 'roleRightSizer.confirmClosed', details );
+		}
+	}
+
+	function closeConfirm( details ) {
+		details.open = false;
+		const summary = details.querySelector( 'summary' );
+		if ( summary ) {
+			summary.focus();
+		}
+	}
+
+	document.addEventListener(
+		'toggle',
+		function ( event ) {
+			if ( event.target.matches && event.target.matches( 'details.rrs-confirm-inline' ) ) {
+				confirmToggled( event.target );
+			}
+		},
+		true
+	);
+
+	document.addEventListener( 'click', function ( event ) {
+		if ( event.target.closest && event.target.closest( '.rrs-confirm-cancel' ) ) {
+			closeConfirm( event.target.closest( 'details.rrs-confirm-inline' ) );
+		}
+	} );
+
+	document.addEventListener( 'keydown', function ( event ) {
+		if ( 'Escape' === event.key && event.target.closest ) {
+			const details = event.target.closest( 'details.rrs-confirm-inline[open]' );
+			if ( details ) {
+				closeConfirm( details );
+			}
+		}
+	} );
+
 	function init() {
 		document.querySelectorAll( '.rrs-form' ).forEach( function ( form ) {
 			form.querySelectorAll( '.rrs-group' ).forEach( syncToggle );
 			update( form );
 		} );
+		announce();
 	}
 
 	if ( 'loading' === document.readyState ) {

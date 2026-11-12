@@ -11,7 +11,7 @@ const PEOPLE = [
 	[ 'nina', 'Nina Shah', 'editor' ],
 ];
 
-const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history' ];
+const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials' ];
 
 function clean() {
 	for ( const option of OPTIONS ) {
@@ -31,7 +31,7 @@ function clean() {
 	} catch ( error ) {
 		// No such role.
 	}
-	wpEval( "update_option( 'role_right_sizer_tracking_started', time() );" );
+	wpEval( "update_option( 'role_right_sizer_tracking_started', time() ); delete_user_meta( 1, 'role_right_sizer_steps_dismissed' );" );
 }
 
 /**
@@ -91,4 +91,31 @@ function seed( trackingDays = 120 ) {
 	` );
 }
 
-module.exports = { seed, clean };
+/**
+ * Starts a trial for Pat that ran into two walls and asked for the access back.
+ * Run after seed().
+ */
+function trialWithDenials() {
+	wp( 'role-right-sizer', 'trial', 'start', 'pat' );
+	wpEval( `
+		$trials = AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->trials();
+		$id     = $trials->all()[0]['id'];
+		$plugins = array( 'key' => 'screen:plugins.php', 'kind' => 'screen', 'label' => 'Tried to open Plugins', 'cap' => 'activate_plugins' );
+		$trials->add_denials( $id, array( $plugins ) );
+		$trials->add_denials( $id, array( $plugins ) );
+		$trials->add_denials( $id, array( array( 'key' => 'cap:edit_others_pages', 'kind' => 'action', 'label' => 'Could not edit a page by another author', 'cap' => 'edit_others_pages' ) ) );
+		$trials->request_access( $id, true );
+	` );
+}
+
+/** Makes every open trial's time run out, and runs the check. */
+function endTrials() {
+	wpEval( `
+		$log = get_option( 'role_right_sizer_trials' );
+		foreach ( $log['items'] as $i => $trial ) { $log['items'][ $i ]['ends'] = time() - 60; }
+		update_option( 'role_right_sizer_trials', $log, false );
+		AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->trials()->check();
+	` );
+}
+
+module.exports = { seed, clean, trialWithDenials, endTrials };

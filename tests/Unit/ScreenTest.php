@@ -14,11 +14,29 @@ use AryanX\Axle\RoleRightSizer\Health\SiteHealth;
 use AryanX\Axle\RoleRightSizer\Recommender;
 use AryanX\Axle\RoleRightSizer\Report;
 use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Trials;
+use AryanX\Axle\RoleRightSizer\Applier;
+use AryanX\Axle\RoleRightSizer\Changes;
 use AryanX\Axle\RoleRightSizer\Usage\Store;
 use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 
 final class ScreenTest extends PluginTestCase {
+
+	/**
+	 * Site Health, wired like Plugin does.
+	 *
+	 * @param Settings $settings Settings.
+	 * @param Store    $store    Usage.
+	 * @return SiteHealth
+	 */
+	private function site_health( Settings $settings, Store $store ): SiteHealth {
+		$recommender = new Recommender( $settings, $store );
+		$report      = new Report( $settings, $recommender, $store );
+		$applier     = new Applier( $settings, $recommender, $report, new Changes() );
+
+		return new SiteHealth( $settings, $report, new Trials( $settings, $applier, $recommender, $report ) );
+	}
 
 	public function test_the_capability_takes_a_filter_and_falls_back(): void {
 		$this->assertSame( 'promote_users', Screen::capability() );
@@ -104,6 +122,7 @@ final class ScreenTest extends PluginTestCase {
 
 	public function test_site_health_says_learning_then_points_to_the_recommendations(): void {
 		Functions\when( 'wp_date' )->justReturn( 'November 21, 2026' );
+		Functions\when( 'human_time_diff' )->justReturn( '3 weeks' );
 		Functions\when( 'number_format_i18n' )->alias( 'strval' );
 		Functions\when( 'admin_url' )->alias(
 			static function ( $path ) {
@@ -117,11 +136,12 @@ final class ScreenTest extends PluginTestCase {
 		);
 		$settings = new Settings();
 		$store    = new Store();
-		$health   = new SiteHealth( $settings, new Report( $settings, new Recommender( $settings, $store ), $store ) );
+		$health   = $this->site_health( $settings, $store );
 
 		$this->tracking_started( 2 );
 		$this->assertSame( 'good', $health->run()['status'] );
 		$this->assertStringContainsString( 'still learning', $health->run()['label'] );
+		$this->assertStringContainsString( 'in 3 weeks', $health->run()['description'] );
 
 		$this->tracking_started( 60 );
 		$this->assertSame( 'good', $health->run()['status'] );
@@ -163,7 +183,7 @@ final class ScreenTest extends PluginTestCase {
 		$settings = new Settings();
 		$store    = new Store();
 
-		return new SiteHealth( $settings, new Report( $settings, new Recommender( $settings, $store ), $store ) );
+		return $this->site_health( $settings, $store );
 	}
 
 	public function test_site_health_does_not_call_unused_role_capabilities_a_security_issue(): void {

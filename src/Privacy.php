@@ -32,14 +32,23 @@ final class Privacy implements Service {
 	private Changes $changes;
 
 	/**
+	 * Trials of a smaller role.
+	 *
+	 * @var Trials
+	 */
+	private Trials $trials;
+
+	/**
 	 * Sets up the privacy tools.
 	 *
 	 * @param Store   $store   Recorded usage.
 	 * @param Changes $changes Change log.
+	 * @param Trials  $trials  Trials of a smaller role.
 	 */
-	public function __construct( Store $store, Changes $changes ) {
+	public function __construct( Store $store, Changes $changes, Trials $trials ) {
 		$this->store   = $store;
 		$this->changes = $changes;
+		$this->trials  = $trials;
 	}
 
 	/**
@@ -161,6 +170,40 @@ final class Privacy implements Service {
 					),
 				);
 			}
+
+			foreach ( $this->trials->all() as $trial ) {
+				if ( (int) $trial['user_id'] !== $user->ID ) {
+					continue;
+				}
+				$denials = array();
+				foreach ( (array) $trial['denials'] as $denial ) {
+					/* translators: 1: what they tried, 2: how many times. */
+					$denials[] = sprintf( _n( '%1$s (%2$s time)', '%1$s (%2$s times)', (int) $denial['count'], 'role-right-sizer' ), $denial['label'], number_format_i18n( (int) $denial['count'] ) );
+				}
+				$data[] = array(
+					'group_id'    => 'role-right-sizer-trials',
+					'group_label' => __( 'Role trials', 'role-right-sizer' ),
+					'item_id'     => 'role-right-sizer-trial-' . $trial['id'],
+					'data'        => array(
+						array(
+							'name'  => __( 'Started', 'role-right-sizer' ),
+							'value' => self::time( (int) $trial['started'] ),
+						),
+						array(
+							'name'  => __( 'Status', 'role-right-sizer' ),
+							'value' => (string) $trial['status'],
+						),
+						array(
+							'name'  => __( 'Roles before and during the trial', 'role-right-sizer' ),
+							'value' => implode( ', ', (array) $trial['before'] ) . ' > ' . implode( ', ', (array) $trial['after'] ),
+						),
+						array(
+							'name'  => __( 'What they could not do', 'role-right-sizer' ),
+							'value' => implode( '; ', $denials ),
+						),
+					),
+				);
+			}
 		}
 
 		return array(
@@ -182,6 +225,7 @@ final class Privacy implements Service {
 		if ( $user ) {
 			$removed = $this->store->forget( $user->ID );
 			$removed = $this->changes->forget_user( $user->ID ) || $removed;
+			$removed = $this->trials->erase( $user->ID ) || $removed;
 
 			/** This action is documented in src/Cli/Command.php */
 			do_action( 'role_right_sizer_usage_forgotten', $user->ID );
@@ -205,7 +249,7 @@ final class Privacy implements Service {
 
 		wp_add_privacy_policy_content(
 			__( 'Role Right-Sizer', 'role-right-sizer' ),
-			'<p>' . esc_html__( 'When you are logged in, this site records which permissions your account used (such as publishing posts or managing plugins), when you last logged in and when you were last active. Each permission is stored with the first and last time it was used. Administrators use this to give every account only the access it needs. The record is kept for as long as the account exists, and changes to your role are kept in a log so they can be undone.', 'role-right-sizer' ) . '</p>'
+			'<p>' . esc_html__( 'When you are logged in, this site records which permissions your account used (such as publishing posts or managing plugins), when you last logged in and when you were last active. Each permission is stored with the first and last time it was used. Administrators use this to give every account only the access it needs. The record is kept for as long as the account exists, and changes to your role are kept in a log so they can be undone. If your role is reduced as a trial, the site also records what you could not do during the trial, such as opening a screen you no longer have access to, and keeps that record for a year after the trial ends.', 'role-right-sizer' ) . '</p>'
 		);
 	}
 

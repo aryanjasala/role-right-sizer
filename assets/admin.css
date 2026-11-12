@@ -1,14 +1,6 @@
 /* Users > Right-Sizer. Layout only: the look comes from axle-ui.css. Prefix: rrs- */
 
-.rrs-toolbar {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 8px;
-	margin: 0 0 16px;
-}
-
-.rrs-toolbar .rrs-built {
+.axle-toolbar .rrs-built {
 	flex: 1 1 320px;
 	margin: 0;
 }
@@ -51,22 +43,6 @@
 .rrs-caps code,
 .rrs-lost code {
 	font-size: 12px;
-}
-
-.rrs-progress {
-	height: 8px;
-	max-width: 480px;
-	margin: 16px 0;
-	overflow: hidden;
-	background: var(--axle-neutral-bg);
-	border: 1px solid var(--axle-border);
-	border-radius: 4px;
-}
-
-.rrs-progress span {
-	display: block;
-	height: 100%;
-	background: var(--axle-accent);
 }
 
 .rrs-confirm-list {
@@ -150,4 +126,61 @@
 
 .rrs-form.has-selection .rrs-review-bar {
 	border-color: var(--axle-accent);
+}
+
+/* In-place confirmation: a button that opens what will change, next to it. */
+.rrs-confirm-inline {
+	display: inline-block;
+	max-width: 36em;
+	vertical-align: top;
+}
+
+.rrs-confirm-inline > summary {
+	display: inline-block;
+	list-style: none;
+	cursor: pointer;
+}
+
+.rrs-confirm-inline > summary::-webkit-details-marker {
+	display: none;
+}
+
+.rrs-confirm-inline[open] {
+	display: block;
+}
+
+.rrs-decide .rrs-inline-form {
+	display: block;
+	margin: 0 0 8px;
+}
+
+.rrs-denials {
+	margin: 8px 0 0;
+}
+
+.rrs-denials li {
+	margin: 0 0 4px;
+}
+
+.rrs-note {
+	display: block;
+	margin-top: 4px;
+}
+
+.rrs-trials .axle-diff {
+	min-width: 10em;
+}
+
+.rrs-changes .axle-diff,
+.rrs-confirm-list .axle-diff {
+	max-width: 28em;
+}
+
+.nav-tab .count {
+	font-weight: 400;
+}
+
+/* Older WordPress draws row checkboxes at 16px: leave room around them for a 24px touch target. */
+.rrs-table .check-column input[type="checkbox"] {
+	margin: 6px 4px;
 }

@@ -20,34 +20,54 @@ final class Settings {
 	/**
 	 * Settings with their defaults.
 	 *
-	 * @return array{dormant_action: string, fallback_role: string, excluded_users: int[], excluded_roles: string[]}
+	 * @return array{dormant_action: string, fallback_role: string, excluded_users: int[], excluded_roles: string[], trial_end_action: string}
 	 */
 	public function all(): array {
 		$saved = get_option( self::OPTION, array() );
 		$saved = is_array( $saved ) ? $saved : array();
 
 		return array(
-			'dormant_action' => 'fallback' === ( $saved['dormant_action'] ?? '' ) ? 'fallback' : 'remove',
-			'fallback_role'  => sanitize_key( (string) ( $saved['fallback_role'] ?? 'subscriber' ) ),
-			'excluded_users' => array_values( array_filter( array_map( 'absint', (array) ( $saved['excluded_users'] ?? array() ) ) ) ),
-			'excluded_roles' => array_values( array_filter( array_map( 'sanitize_key', (array) ( $saved['excluded_roles'] ?? array() ) ) ) ),
+			'dormant_action'   => 'fallback' === ( $saved['dormant_action'] ?? '' ) ? 'fallback' : 'remove',
+			'fallback_role'    => sanitize_key( (string) ( $saved['fallback_role'] ?? 'subscriber' ) ),
+			'excluded_users'   => array_values( array_filter( array_map( 'absint', (array) ( $saved['excluded_users'] ?? array() ) ) ) ),
+			'excluded_roles'   => array_values( array_filter( array_map( 'sanitize_key', (array) ( $saved['excluded_roles'] ?? array() ) ) ) ),
+			'trial_end_action' => 'keep' === ( $saved['trial_end_action'] ?? '' ) ? 'keep' : 'ask',
 		);
+	}
+
+	/**
+	 * What happens when a trial ends and the person never hit a wall.
+	 *
+	 * A trial with denials is never closed on its own, whatever this says.
+	 *
+	 * @return string `ask` (wait for a person to decide) or `keep` (make the smaller role permanent).
+	 */
+	public function trial_end_action(): string {
+		/**
+		 * Filters what happens when a trial ends with no denials.
+		 *
+		 * @param string $action `ask` waits for a decision, `keep` makes the smaller role permanent. Default `ask`.
+		 */
+		$action = apply_filters( 'role_right_sizer_trial_end_action', $this->all()['trial_end_action'] );
+
+		return 'keep' === $action ? 'keep' : 'ask';
 	}
 
 	/**
 	 * Saves the settings from the screen or WP-CLI.
 	 *
-	 * @param array $values dormant_action, fallback_role, excluded_users, excluded_roles.
+	 * @param array $values dormant_action, fallback_role, excluded_users, excluded_roles, trial_end_action.
 	 */
 	public function save( array $values ): void {
 		$current = $this->all();
 		$roles   = array_keys( wp_roles()->roles );
 
 		$settings = array(
-			'dormant_action' => 'fallback' === ( $values['dormant_action'] ?? $current['dormant_action'] ) ? 'fallback' : 'remove',
-			'fallback_role'  => sanitize_key( (string) ( $values['fallback_role'] ?? $current['fallback_role'] ) ),
-			'excluded_users' => array_values( array_unique( array_filter( array_map( 'absint', (array) ( $values['excluded_users'] ?? $current['excluded_users'] ) ) ) ) ),
-			'excluded_roles' => array_values( array_intersect( array_map( 'sanitize_key', (array) ( $values['excluded_roles'] ?? $current['excluded_roles'] ) ), $roles ) ),
+			'dormant_action'   => 'fallback' === ( $values['dormant_action'] ?? $current['dormant_action'] ) ? 'fallback' : 'remove',
+			'fallback_role'    => sanitize_key( (string) ( $values['fallback_role'] ?? $current['fallback_role'] ) ),
+			'excluded_users'   => array_values( array_unique( array_filter( array_map( 'absint', (array) ( $values['excluded_users'] ?? $current['excluded_users'] ) ) ) ) ),
+			'excluded_roles'   => array_values( array_intersect( array_map( 'sanitize_key', (array) ( $values['excluded_roles'] ?? $current['excluded_roles'] ) ), $roles ) ),
+			'trial_end_action' => 'keep' === ( $values['trial_end_action'] ?? $current['trial_end_action'] ) ? 'keep' : 'ask',
 		);
 
 		if ( ! in_array( $settings['fallback_role'], $roles, true ) ) {
@@ -293,5 +313,22 @@ final class Settings {
 		}
 
 		return array_values( array_unique( $strings ) );
+	}
+
+	/**
+	 * A filtered map, as unique string keys with non-empty string values.
+	 *
+	 * @param mixed $value Filtered value.
+	 * @return array<string, string>
+	 */
+	public static function strings_map( $value ): array {
+		$map = array();
+		foreach ( is_array( $value ) ? $value : array() as $key => $item ) {
+			if ( is_string( $key ) && '' !== $key && is_string( $item ) && '' !== $item ) {
+				$map[ $key ] = $item;
+			}
+		}
+
+		return $map;
 	}
 }

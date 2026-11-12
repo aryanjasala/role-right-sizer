@@ -408,6 +408,76 @@ final class Command {
 	}
 
 	/**
+	 * Shows the settings, or changes the ones you pass. Recommendations are rebuilt after a change.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--dormant-action=<action>]
+	 * : What to recommend for dormant accounts: remove (take every role away) or fallback (move to the fallback role).
+	 *
+	 * [--fallback-role=<role>]
+	 * : The role dormant accounts move to when the action is fallback.
+	 *
+	 * [--trial-end-action=<action>]
+	 * : What happens when a trial ends with no denials: ask (wait for a decision) or keep (make the smaller role permanent).
+	 *
+	 * [--format=<format>]
+	 * : table, csv, json or yaml.
+	 * ---
+	 * default: table
+	 * ---
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp role-right-sizer settings
+	 *     wp role-right-sizer settings --trial-end-action=keep
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Named arguments.
+	 */
+	public function settings( array $args, array $assoc_args ): void {
+		$map     = array(
+			'dormant-action'   => 'dormant_action',
+			'fallback-role'    => 'fallback_role',
+			'trial-end-action' => 'trial_end_action',
+		);
+		$choices = array(
+			'dormant_action'   => array( 'remove', 'fallback' ),
+			'trial_end_action' => array( 'ask', 'keep' ),
+		);
+		$changes = array();
+		foreach ( $map as $flag => $key ) {
+			if ( ! isset( $assoc_args[ $flag ] ) ) {
+				continue;
+			}
+			$value = (string) $assoc_args[ $flag ];
+			if ( isset( $choices[ $key ] ) && ! in_array( $value, $choices[ $key ], true ) ) {
+				\WP_CLI::error( sprintf( '--%s must be one of: %s.', $flag, implode( ', ', $choices[ $key ] ) ) );
+			}
+			if ( 'fallback_role' === $key && null === get_role( $value ) ) {
+				\WP_CLI::error( sprintf( 'There is no role "%s".', $value ) );
+			}
+			$changes[ $key ] = $value;
+		}
+
+		if ( $changes ) {
+			$this->settings->save( $changes );
+			$this->report->rebuild( 0 );
+			\WP_CLI::success( 'Settings saved. Recommendations rebuilt.' );
+		}
+
+		$all  = $this->settings->all();
+		$rows = array();
+		foreach ( $all as $key => $value ) {
+			$rows[] = array(
+				'setting' => $key,
+				'value'   => is_array( $value ) ? implode( ', ', array_map( 'strval', $value ) ) : (string) $value,
+			);
+		}
+		\WP_CLI\Utils\format_items( (string) ( $assoc_args['format'] ?? 'table' ), $rows, array( 'setting', 'value' ) );
+	}
+
+	/**
 	 * Deletes everything recorded about a user on this site.
 	 *
 	 * ## OPTIONS

@@ -7,6 +7,7 @@
 
 namespace AryanX\Axle\RoleRightSizer\Admin;
 
+use AryanX\Axle\RoleRightSizer\Access;
 use AryanX\Axle\RoleRightSizer\Applier;
 use AryanX\Axle\RoleRightSizer\CapabilityOwners;
 use AryanX\Axle\RoleRightSizer\Changes;
@@ -14,6 +15,7 @@ use AryanX\Axle\RoleRightSizer\Recommender;
 use AryanX\Axle\RoleRightSizer\Report;
 use AryanX\Axle\RoleRightSizer\Service;
 use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Trials;
 use AryanX\Axle\RoleRightSizer\Usage\Store;
 use const AryanX\Axle\RoleRightSizer\PLUGIN_FILE;
 use const AryanX\Axle\RoleRightSizer\VERSION;
@@ -71,6 +73,13 @@ final class Screen implements Service {
 	private Applier $applier;
 
 	/**
+	 * Trials of a smaller role.
+	 *
+	 * @var Trials
+	 */
+	private Trials $trials;
+
+	/**
 	 * Sets up the screen.
 	 *
 	 * @param Settings    $settings    Settings and limits.
@@ -79,8 +88,10 @@ final class Screen implements Service {
 	 * @param Report      $report      Saved recommendations.
 	 * @param Changes     $changes     Change log.
 	 * @param Applier     $applier     Applies and undoes changes.
+	 * @param Trials      $trials      Trials of a smaller role.
 	 */
-	public function __construct( Settings $settings, Store $store, Recommender $recommender, Report $report, Changes $changes, Applier $applier ) {
+	public function __construct( Settings $settings, Store $store, Recommender $recommender, Report $report, Changes $changes, Applier $applier, Trials $trials ) {
+		$this->trials      = $trials;
 		$this->settings    = $settings;
 		$this->store       = $store;
 		$this->recommender = $recommender;
@@ -95,6 +106,56 @@ final class Screen implements Service {
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'add_page' ) );
 		add_action( 'admin_post_' . self::ACTION, array( $this, 'handle' ) );
+		add_filter( 'plugin_action_links_' . plugin_basename( PLUGIN_FILE ), array( $this, 'action_links' ) );
+	}
+
+	/**
+	 * Adds a link to the screen in the plugin's row on the Plugins screen.
+	 *
+	 * @param mixed $links Links shown under the plugin name.
+	 * @return mixed
+	 */
+	public function action_links( $links ) {
+		if ( is_array( $links ) && current_user_can( self::capability() ) ) {
+			array_unshift( $links, '<a href="' . esc_url( self::url() ) . '">' . esc_html__( 'Open Right-Sizer', 'role-right-sizer' ) . '</a>' );
+		}
+
+		return $links;
+	}
+
+	/**
+	 * Adds the Help tabs to the screen.
+	 */
+	public function help(): void {
+		AxleUi::help_tabs(
+			array(
+				array(
+					'id'      => 'overview',
+					'title'   => __( 'Overview', 'role-right-sizer' ),
+					'content' => '<p>' . esc_html__( 'Role Right-Sizer records which capabilities each person actually uses, then recommends the smallest role that covers it. Nothing changes until you apply a recommendation, and every change can be undone from the Changes tab.', 'role-right-sizer' ) . '</p><p>' . esc_html__( 'For the first 30 days it only learns. After that the Recommendations tab shows who could have a smaller role, which accounts are dormant, and which capabilities on roles nobody uses.', 'role-right-sizer' ) . '</p>',
+				),
+				array(
+					'id'      => 'recommendations',
+					'title'   => __( 'Recommendations', 'role-right-sizer' ),
+					'content' => '<p>' . esc_html__( 'Tick the people or capabilities you want to change and choose Review selected changes. You see every capability that would be lost before anything happens. Rebuild now looks at the accounts again, and Download CSV exports every account you may edit.', 'role-right-sizer' ) . '</p>',
+				),
+				array(
+					'id'      => 'trials',
+					'title'   => __( 'Trials', 'role-right-sizer' ),
+					'content' => '<p>' . esc_html__( 'Try for 14 days gives someone the smaller role for a while instead of for good. While the trial runs, Right-Sizer records what they were not allowed to do. They see a message with a button to ask for their access back.', 'role-right-sizer' ) . '</p><p>' . esc_html__( 'On the Trials tab you can restore the old role at any time, add more days, or make the smaller role permanent. A trial where the person hit a wall is never made permanent on its own.', 'role-right-sizer' ) . '</p>',
+				),
+				array(
+					'id'      => 'changes',
+					'title'   => __( 'Changes and Undo', 'role-right-sizer' ),
+					'content' => '<p>' . esc_html__( 'Every change is logged with the roles or capabilities it replaced. Undo puts them back. Changes applied together share a batch, and one click undoes the whole batch.', 'role-right-sizer' ) . '</p>',
+				),
+				array(
+					'id'      => 'settings',
+					'title'   => __( 'Settings', 'role-right-sizer' ),
+					'content' => '<p>' . esc_html__( 'Choose what happens to dormant accounts, which roles and people are never touched, and what happens when a trial ends with no denials. The last administrator is always left alone.', 'role-right-sizer' ) . '</p>',
+				),
+			)
+		);
 	}
 
 	/**
@@ -134,6 +195,7 @@ final class Screen implements Service {
 		);
 
 		if ( $hook ) {
+			add_action( "load-{$hook}", array( $this, 'help' ) );
 			add_action( "admin_print_styles-{$hook}", array( $this, 'enqueue_assets' ) );
 		}
 	}
@@ -144,7 +206,7 @@ final class Screen implements Service {
 	public function enqueue_assets(): void {
 		AxleUi::enqueue();
 		wp_enqueue_style( 'role-right-sizer-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array( AxleUi::HANDLE ), VERSION );
-		wp_enqueue_script( 'role-right-sizer-admin', plugins_url( 'assets/admin.js', PLUGIN_FILE ), array( 'wp-hooks', 'wp-i18n' ), VERSION, true );
+		wp_enqueue_script( 'role-right-sizer-admin', plugins_url( 'assets/admin.js', PLUGIN_FILE ), array( 'wp-hooks', 'wp-i18n', 'wp-a11y' ), VERSION, true );
 		wp_set_script_translations( 'role-right-sizer-admin', 'role-right-sizer' );
 	}
 
@@ -175,13 +237,83 @@ final class Screen implements Service {
 	}
 
 	/**
-	 * A date, or "Never".
+	 * Tags a time may contain after AxleUi::relative_time().
 	 *
-	 * @param int $time Unix time.
-	 * @return string
+	 * @return array<string, array<string, bool>>
 	 */
-	public static function date_label( int $time ): string {
-		return $time ? (string) wp_date( (string) get_option( 'date_format' ), $time ) : __( 'Never', 'role-right-sizer' );
+	private static function time_tags(): array {
+		return array(
+			'time' => array(
+				'class'    => true,
+				'datetime' => true,
+				'title'    => true,
+			),
+			'span' => array( 'class' => true ),
+		);
+	}
+
+	/**
+	 * A time as "5 minutes ago", for use inside a sentence that is printed with wp_kses().
+	 *
+	 * @param int    $time     Unix time.
+	 * @param string $fallback What to show for no time.
+	 * @return string HTML.
+	 */
+	public static function time_html( int $time, string $fallback = '' ): string {
+		return wp_kses( AxleUi::relative_time( $time, $fallback ), self::time_tags() );
+	}
+
+	/**
+	 * Prints a time as "5 minutes ago", with the exact time on hover.
+	 *
+	 * @param int    $time     Unix time.
+	 * @param string $fallback What to show for no time.
+	 */
+	public static function print_time( int $time, string $fallback = '' ): void {
+		echo wp_kses( AxleUi::relative_time( $time, $fallback ), self::time_tags() );
+	}
+
+	/**
+	 * Prints a button that runs a task. When it overwrites roles, it opens an in-place
+	 * confirmation that says what changes and whether it can be undone.
+	 *
+	 * @param string $task    Task name.
+	 * @param string $label   Button text.
+	 * @param array  $fields  Hidden fields.
+	 * @param array  $options `style` (primary, secondary, link), `confirm` (what will change, shows the confirmation), `confirm_label` (the button that does it), `danger` (red confirmation).
+	 */
+	public static function print_action( string $task, string $label, array $fields = array(), array $options = array() ): void {
+		static $count = 0;
+		++$count;
+
+		$style   = (string) ( $options['style'] ?? 'secondary' );
+		$confirm = (string) ( $options['confirm'] ?? '' );
+		$class   = 'link' === $style ? 'button-link' : 'button button-' . $style;
+		$id      = 'rrs-confirm-' . $count;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="rrs-inline-form">
+			<?php wp_nonce_field( self::ACTION ); ?>
+			<input type="hidden" name="action" value="<?php echo esc_attr( self::ACTION ); ?>">
+			<input type="hidden" name="task" value="<?php echo esc_attr( $task ); ?>">
+			<?php foreach ( $fields as $name => $value ) : ?>
+				<input type="hidden" name="<?php echo esc_attr( (string) $name ); ?>" value="<?php echo esc_attr( (string) $value ); ?>">
+			<?php endforeach; ?>
+			<?php if ( '' === $confirm ) : ?>
+				<button type="submit" class="<?php echo esc_attr( $class ); ?>"><?php echo esc_html( $label ); ?></button>
+			<?php else : ?>
+				<details class="rrs-confirm-inline">
+					<summary class="<?php echo esc_attr( $class ); ?>"><?php echo esc_html( $label ); ?></summary>
+					<div class="axle-confirm<?php echo ! empty( $options['danger'] ) ? ' axle-confirm--danger' : ''; ?>" role="group" aria-labelledby="<?php echo esc_attr( $id ); ?>">
+						<p id="<?php echo esc_attr( $id ); ?>"><?php echo esc_html( $confirm ); ?></p>
+						<div class="axle-actions">
+							<button type="submit" class="button button-primary<?php echo ! empty( $options['danger'] ) ? ' axle-button--danger' : ''; ?>"><?php echo esc_html( (string) ( $options['confirm_label'] ?? $label ) ); ?></button>
+							<button type="button" class="button rrs-confirm-cancel"><?php esc_html_e( 'Cancel', 'role-right-sizer' ); ?></button>
+						</div>
+					</div>
+				</details>
+			<?php endif; ?>
+		</form>
+		<?php
 	}
 
 	/**
@@ -192,16 +324,19 @@ final class Screen implements Service {
 		$tab  = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'recommendations';
 		$view = isset( $_GET['view'] ) ? sanitize_key( wp_unslash( $_GET['view'] ) ) : '';
 		// phpcs:enable
+		$open   = count( $this->trials->open() );
 		$tabs   = array(
 			'recommendations' => __( 'Recommendations', 'role-right-sizer' ),
+			'trials'          => __( 'Trials', 'role-right-sizer' ),
 			'changes'         => __( 'Changes', 'role-right-sizer' ),
 			'settings'        => __( 'Settings', 'role-right-sizer' ),
 		);
 		$tab    = isset( $tabs[ $tab ] ) ? $tab : 'recommendations';
 		$intros = array(
 			'recommendations' => __( 'Role Right-Sizer records which capabilities each person actually uses, then recommends the smallest role that covers it. Nothing changes until you apply a recommendation, and every change can be undone.', 'role-right-sizer' ),
+			'trials'          => __( 'Give someone the smaller role for a while. If they hit a wall, you see exactly what they could not do, and one click gives the old role back.', 'role-right-sizer' ),
 			'changes'         => __( 'Every change you applied, newest first. Undo puts the earlier roles and capabilities back.', 'role-right-sizer' ),
-			'settings'        => __( 'Choose what Role Right-Sizer recommends for dormant accounts, and which roles and people it never touches.', 'role-right-sizer' ),
+			'settings'        => __( 'Choose what Role Right-Sizer recommends for dormant accounts, which roles and people it never touches, and what happens when a trial ends.', 'role-right-sizer' ),
 		);
 		$intro  = 'confirm' === $view ? __( 'Check every change before it is applied. Each one goes into the log, where one click undoes it.', 'role-right-sizer' ) : $intros[ $tab ];
 		?>
@@ -209,6 +344,13 @@ final class Screen implements Service {
 			<h1 class="wp-heading-inline"><?php esc_html_e( 'Role Right-Sizer', 'role-right-sizer' ); ?></h1>
 			<?php if ( $this->settings->is_learning() ) : ?>
 				<span class="axle-status axle-badge axle-badge--info"><?php esc_html_e( 'Learning', 'role-right-sizer' ); ?></span>
+			<?php elseif ( $open ) : ?>
+				<span class="axle-status axle-badge axle-badge--info">
+					<?php
+					/* translators: %s: number of trials. */
+					echo esc_html( sprintf( _n( '%s trial running', '%s trials running', $open, 'role-right-sizer' ), number_format_i18n( $open ) ) );
+					?>
+				</span>
 			<?php endif; ?>
 			<hr class="wp-header-end">
 
@@ -216,7 +358,14 @@ final class Screen implements Service {
 
 			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'Role Right-Sizer sections', 'role-right-sizer' ); ?>">
 				<?php foreach ( $tabs as $key => $label ) : ?>
-					<a href="<?php echo esc_url( self::url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>><?php echo esc_html( $label ); ?></a>
+					<a href="<?php echo esc_url( self::url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>>
+						<?php
+						echo esc_html( $label );
+						if ( 'trials' === $key && $open ) {
+							echo ' <span class="count">(' . esc_html( number_format_i18n( $open ) ) . ')</span>';
+						}
+						?>
+					</a>
 				<?php endforeach; ?>
 			</nav>
 
@@ -225,16 +374,81 @@ final class Screen implements Service {
 			<?php
 			if ( 'confirm' === $view ) {
 				$this->render_confirm();
+			} elseif ( 'trials' === $tab ) {
+				( new TrialsTab( $this->trials ) )->render();
 			} elseif ( 'changes' === $tab ) {
 				$this->render_changes();
 			} elseif ( 'settings' === $tab ) {
 				$this->render_settings();
 			} else {
+				$this->render_steps();
 				$this->render_recommendations();
 			}
 			AxleUi::footer();
 			?>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Prints the "Get started" card until its steps are done or dismissed.
+	 */
+	private function render_steps(): void {
+		$user_id = get_current_user_id();
+		if ( get_user_meta( $user_id, 'role_right_sizer_steps_dismissed', true ) ) {
+			return;
+		}
+
+		$learning = $this->settings->is_learning();
+		$report   = $this->report->get();
+		$steps    = array(
+			array(
+				'title' => __( 'Let it learn', 'role-right-sizer' ),
+				'text'  => __( 'Right-Sizer records which capabilities people use for the first 30 days. It changes nothing in that time.', 'role-right-sizer' ),
+				'done'  => ! $learning,
+				'url'   => '',
+			),
+			array(
+				'title' => __( 'Look at the recommendations', 'role-right-sizer' ),
+				'text'  => __( 'See who could have a smaller role, and what each person would lose.', 'role-right-sizer' ),
+				'done'  => ! $learning && $report['built'] > 0,
+				'url'   => '',
+			),
+			array(
+				'title' => __( 'Try one, or apply one', 'role-right-sizer' ),
+				'text'  => __( 'A trial gives the smaller role for 14 days and shows what the person could not do. Applying it is for good, with Undo.', 'role-right-sizer' ),
+				'done'  => (bool) $this->changes->all() || (bool) $this->trials->all(),
+				'url'   => '',
+			),
+		);
+
+		$pending = array_filter(
+			$steps,
+			static function ( array $step ): bool {
+				return ! $step['done'];
+			}
+		);
+		if ( ! $pending ) {
+			return;
+		}
+		?>
+		<section class="axle-card rrs-steps">
+			<h2 class="axle-card__title"><?php esc_html_e( 'Get started', 'role-right-sizer' ); ?></h2>
+			<ol class="axle-steps">
+				<?php foreach ( $steps as $step ) : ?>
+					<li class="axle-step">
+						<div class="axle-step__body">
+							<strong class="axle-step__title"><?php echo esc_html( $step['title'] ); ?></strong>
+							<p><?php echo esc_html( $step['text'] ); ?></p>
+						</div>
+						<?php if ( $step['done'] ) : ?>
+							<span class="axle-badge axle-badge--good"><?php esc_html_e( 'Done', 'role-right-sizer' ); ?></span>
+						<?php endif; ?>
+					</li>
+				<?php endforeach; ?>
+			</ol>
+			<p class="axle-actions"><?php self::print_action( 'dismiss_steps', __( 'Dismiss this card', 'role-right-sizer' ), array(), array( 'style' => 'link' ) ); ?></p>
+		</section>
 		<?php
 	}
 
@@ -258,48 +472,64 @@ final class Screen implements Service {
 			'dormant'   => array(),
 			'never'     => array(),
 		);
-		foreach ( $report['users'] as $recommendation ) {
+		// Only the accounts this person may edit: a capability list says what an account can do.
+		foreach ( Access::visible_recommendations( array_values( $report['users'] ) ) as $recommendation ) {
 			$users[ $recommendation['type'] ][] = $recommendation;
 		}
+		$visible = count( $users['downgrade'] ) + count( $users['dormant'] ) + count( $users['never'] );
+
+		// One query for every account on the screen, not one per row.
+		$ids = array();
+		foreach ( $users as $list ) {
+			foreach ( $list as $recommendation ) {
+				$ids[] = (int) $recommendation['user_id'];
+			}
+		}
+		if ( $ids ) {
+			cache_users( array_values( array_unique( $ids ) ) );
+		}
 		?>
-		<div class="rrs-toolbar">
+		<div class="axle-toolbar">
 			<p class="rrs-built axle-muted">
 				<?php
 				if ( $report['built'] ) {
-					echo esc_html(
+					echo wp_kses(
 						sprintf(
-							/* translators: 1: time since the report was built, e.g. "5 mins", 2: number of accounts, 3: number of days. */
-							_n( 'Built %1$s ago from %2$s account with more than read access. Usage counts from the last %3$s days.', 'Built %1$s ago from %2$s accounts with more than read access. Usage counts from the last %3$s days.', $report['scanned'], 'role-right-sizer' ),
-							human_time_diff( $report['built'] ),
+							/* translators: 1: time since the report was built, e.g. "5 minutes ago", 2: number of accounts, 3: number of days. */
+							_n( 'Built %1$s from %2$s account with more than read access. Usage counts from the last %3$s days.', 'Built %1$s from %2$s accounts with more than read access. Usage counts from the last %3$s days.', $report['scanned'], 'role-right-sizer' ),
+							self::time_html( (int) $report['built'] ),
 							number_format_i18n( $report['scanned'] ),
 							number_format_i18n( $this->settings->window_days() )
-						)
+						),
+						self::time_tags()
 					);
 				}
 				?>
 			</p>
-			<?php $this->render_button( 'rebuild', __( 'Rebuild now', 'role-right-sizer' ), 'secondary' ); ?>
-			<a class="button" href="
-			<?php
-			echo esc_url(
-				wp_nonce_url(
-					add_query_arg(
-						array(
-							'action' => self::ACTION,
-							'task'   => 'export',
+			<span class="axle-toolbar__end">
+				<?php self::print_action( 'rebuild', __( 'Rebuild now', 'role-right-sizer' ) ); ?>
+				<a class="button" href="
+				<?php
+				echo esc_url(
+					wp_nonce_url(
+						add_query_arg(
+							array(
+								'action' => self::ACTION,
+								'task'   => 'export',
+							),
+							admin_url( 'admin-post.php' )
 						),
-						admin_url( 'admin-post.php' ) 
-					),
-					self::ACTION 
-				) 
-			);
-			?>
-									"><?php esc_html_e( 'Download CSV', 'role-right-sizer' ); ?></a>
+						self::ACTION
+					)
+				);
+				?>
+				"><?php esc_html_e( 'Download CSV', 'role-right-sizer' ); ?></a>
+			</span>
 		</div>
 
 		<?php $this->render_skipped( $report ); ?>
 
-		<?php if ( $report['users'] || $report['roles'] ) : ?>
+		<?php if ( $visible || $report['roles'] ) : ?>
 			<div class="axle-stats">
 				<?php
 				$stats = array(
@@ -333,9 +563,10 @@ final class Screen implements Service {
 			</p></div>
 		<?php endif; ?>
 
-		<?php if ( ! $report['users'] && ! $report['roles'] ) : ?>
+		<?php if ( ! $visible && ! $report['roles'] ) : ?>
 			<div class="axle-empty rrs-empty">
-				<p><strong><?php esc_html_e( 'Nothing to change.', 'role-right-sizer' ); ?></strong> <?php esc_html_e( 'Every account uses what its role gives it, and every capability on a role is used by someone.', 'role-right-sizer' ); ?></p>
+				<p><strong><?php esc_html_e( 'Nothing to change.', 'role-right-sizer' ); ?></strong> <?php esc_html_e( 'Every account uses what its role gives it, and every capability on a role is used by someone. New recommendations show up here when that changes. The list is rebuilt every day.', 'role-right-sizer' ); ?></p>
+				<?php self::print_action( 'rebuild', __( 'Rebuild now', 'role-right-sizer' ) ); ?>
 			</div>
 			<?php
 			return;
@@ -364,8 +595,8 @@ final class Screen implements Service {
 			$this->render_user_table(
 				'never',
 				__( 'Never logged in since tracking began', 'role-right-sizer' ),
-				/* translators: %s: date tracking began. */
-				sprintf( __( 'No login or activity since %s.', 'role-right-sizer' ), self::date_label( $this->settings->tracking_started() ) ),
+				/* translators: %s: when tracking began, e.g. "3 months ago". */
+				sprintf( __( 'No login or activity since tracking began %s.', 'role-right-sizer' ), self::time_html( $this->settings->tracking_started() ) ),
 				$users['never'],
 				$self
 			);
@@ -394,31 +625,34 @@ final class Screen implements Service {
 			<h2 class="axle-card__title"><?php esc_html_e( 'Learning how people use the site', 'role-right-sizer' ); ?></h2>
 			<p>
 				<?php
-				echo esc_html(
+				echo wp_kses(
 					sprintf(
-						/* translators: 1: days left, 2: date. */
-						_n( 'Recommendations show up in %1$s day, on %2$s. Until then Role Right-Sizer only records which capabilities people use.', 'Recommendations show up in %1$s days, on %2$s. Until then Role Right-Sizer only records which capabilities people use.', $left, 'role-right-sizer' ),
+						/* translators: 1: days left, 2: when, e.g. "in 3 weeks". */
+						_n( 'Recommendations show up in %1$s day (%2$s). Until then Role Right-Sizer only records which capabilities people use.', 'Recommendations show up in %1$s days (%2$s). Until then Role Right-Sizer only records which capabilities people use.', $left, 'role-right-sizer' ),
 						number_format_i18n( $left ),
-						self::date_label( $ends )
-					)
+						self::time_html( $ends )
+					),
+					self::time_tags()
 				);
 				?>
 			</p>
-			<div class="rrs-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo esc_attr( (string) $percent ); ?>" aria-label="<?php esc_attr_e( 'Learning period', 'role-right-sizer' ); ?>">
-				<span style="width: <?php echo esc_attr( (string) $percent ); ?>%"></span>
+			<div class="axle-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo esc_attr( (string) $percent ); ?>" aria-label="<?php esc_attr_e( 'Learning period', 'role-right-sizer' ); ?>">
+				<span class="axle-progress__bar" style="width: <?php echo esc_attr( (string) $percent ); ?>%"></span>
 			</div>
 			<p class="axle-muted">
 				<?php
-				echo esc_html(
+				echo wp_kses(
 					sprintf(
-						/* translators: 1: date tracking began, 2: number of days. */
-						__( 'Tracking began on %1$s. The learning period is %2$s days.', 'role-right-sizer' ),
-						self::date_label( $started ),
+						/* translators: 1: when tracking began, e.g. "3 days ago", 2: number of days. */
+						__( 'Tracking began %1$s. The learning period is %2$s days.', 'role-right-sizer' ),
+						self::time_html( $started ),
 						number_format_i18n( $days )
-					)
+					),
+					self::time_tags()
 				);
 				?>
 			</p>
+			<p class="axle-muted"><?php echo esc_html( sprintf( /* translators: %s: percent. */ __( '%s percent of the learning period is over.', 'role-right-sizer' ), number_format_i18n( $percent ) ) ); ?></p>
 		</section>
 		<?php
 	}
@@ -477,14 +711,14 @@ final class Screen implements Service {
 		?>
 		<section class="axle-card rrs-section rrs-section--<?php echo esc_attr( $type ); ?>">
 			<h2 class="axle-card__title"><?php echo esc_html( $title ); ?> <span class="count">(<?php echo esc_html( number_format_i18n( count( $recommendations ) ) ); ?>)</span></h2>
-			<p class="axle-muted"><?php echo esc_html( $description ); ?></p>
+			<p class="axle-muted"><?php echo wp_kses( $description, self::time_tags() ); ?></p>
+			<div class="axle-scroll" tabindex="0" role="region" aria-label="<?php echo esc_attr( $title ); ?>">
 			<table class="wp-list-table widefat striped rrs-table">
 				<thead>
 					<tr>
 						<td class="manage-column column-cb check-column"><input type="checkbox" id="rrs-all-<?php echo esc_attr( $type ); ?>" aria-label="<?php esc_attr_e( 'Select all', 'role-right-sizer' ); ?>"></td>
 						<th scope="col" class="column-primary"><?php esc_html_e( 'User', 'role-right-sizer' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Role now', 'role-right-sizer' ); ?></th>
-						<th scope="col"><?php esc_html_e( 'Recommended', 'role-right-sizer' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Role now and recommended', 'role-right-sizer' ); ?></th>
 						<th scope="col"><?php esc_html_e( 'Would lose', 'role-right-sizer' ); ?></th>
 						<?php if ( 'downgrade' === $type ) : ?>
 							<th scope="col"><?php esc_html_e( 'Used', 'role-right-sizer' ); ?></th>
@@ -516,34 +750,64 @@ final class Screen implements Service {
 							<td class="column-primary">
 								<strong><?php echo esc_html( $user->display_name ); ?></strong>
 								<span class="axle-muted"><?php echo esc_html( $user->user_login ); ?></span>
+								<?php if ( $this->trials->for_user( $user->ID ) ) : ?>
+									<span class="axle-badge axle-badge--info"><?php esc_html_e( 'On trial', 'role-right-sizer' ); ?></span>
+								<?php endif; ?>
 								<?php if ( $is_self ) : ?>
 									<span class="rrs-note axle-muted"><?php esc_html_e( 'This is you. Ask another administrator to change your role.', 'role-right-sizer' ); ?></span>
 								<?php else : ?>
-									<div class="row-actions"><a href="
-									<?php
-									echo esc_url(
-										self::url(
-											array(
-												'view'  => 'confirm',
-												'users' => array( $user->ID ),
+									<div class="row-actions">
+										<span class="apply"><a href="
+										<?php
+										echo esc_url(
+											self::url(
+												array(
+													'view' => 'confirm',
+													'users' => array( $user->ID ),
+												) 
 											) 
-										) 
-									);
-									?>
-																		"><?php esc_html_e( 'Apply', 'role-right-sizer' ); ?></a></div>
+										);
+										?>
+																		"><?php esc_html_e( 'Apply', 'role-right-sizer' ); ?></a></span>
+										<?php if ( 'downgrade' === $type && in_array( 'downgrade', $this->trials->types(), true ) && ! $this->trials->for_user( $user->ID ) ) : ?>
+											<span class="trial"> | <a href="
+											<?php
+											echo esc_url(
+												self::url(
+													array(
+														'view' => 'confirm',
+														'trial' => 1,
+														'users' => array( $user->ID ),
+													) 
+												) 
+											);
+											?>
+																			">
+												<?php
+												/* translators: %s: number of days. */
+												echo esc_html( sprintf( _n( 'Try for %s day', 'Try for %s days', $this->trials->days(), 'role-right-sizer' ), number_format_i18n( $this->trials->days() ) ) );
+												?>
+											</a></span>
+										<?php endif; ?>
+									</div>
 								<?php endif; ?>
 							</td>
-							<td><?php echo esc_html( self::roles_label( (array) $recommendation['current'] ) ); ?></td>
-							<td class="rrs-proposed"><strong><?php echo esc_html( self::role_label( (string) $recommendation['proposed'] ) ); ?></strong></td>
+							<td class="rrs-role-diff">
+								<div class="axle-diff">
+									<del><span class="screen-reader-text"><?php esc_html_e( 'Before:', 'role-right-sizer' ); ?></span> <?php echo esc_html( self::roles_label( (array) $recommendation['current'] ) ); ?></del>
+									<ins class="rrs-proposed"><span class="screen-reader-text"><?php esc_html_e( 'After:', 'role-right-sizer' ); ?></span> <?php echo esc_html( self::role_label( (string) $recommendation['proposed'] ) ); ?></ins>
+								</div>
+							</td>
 							<td><?php $this->render_caps( (array) $recommendation['lost'] ); ?></td>
 							<?php if ( 'downgrade' === $type ) : ?>
 								<td><?php $this->render_used( (array) $recommendation['used'] ); ?></td>
 							<?php endif; ?>
-							<td><?php echo esc_html( self::date_label( max( (int) $recommendation['last_active'], (int) $recommendation['last_login'] ) ) ); ?></td>
+							<td><?php self::print_time( max( (int) $recommendation['last_active'], (int) $recommendation['last_login'] ) ); ?></td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
 			</table>
+			</div>
 		</section>
 		<?php
 	}
@@ -623,6 +887,7 @@ final class Screen implements Service {
 		<section class="axle-card rrs-section rrs-section--roles">
 			<h2 class="axle-card__title"><?php esc_html_e( 'Unused capabilities on roles', 'role-right-sizer' ); ?> <span class="count">(<?php echo esc_html( number_format_i18n( count( $recommendations ) ) ); ?>)</span></h2>
 			<p class="axle-muted"><?php esc_html_e( 'Capabilities a role has had for the whole window that none of its users used. Usually left behind by a plugin. Core capabilities, new ones and the administrator role are not listed here.', 'role-right-sizer' ); ?></p>
+			<div class="axle-scroll" tabindex="0" role="region" aria-label="<?php esc_attr_e( 'Unused capabilities on roles', 'role-right-sizer' ); ?>">
 			<table class="wp-list-table widefat striped rrs-table rrs-groups">
 				<thead>
 					<tr>
@@ -693,6 +958,7 @@ final class Screen implements Service {
 					<?php endforeach; ?>
 				</tbody>
 			</table>
+			</div>
 		</section>
 		<?php
 	}
@@ -705,6 +971,7 @@ final class Screen implements Service {
 		$user_ids = isset( $_GET['users'] ) ? array_map( 'absint', (array) wp_unslash( $_GET['users'] ) ) : array();
 		$pairs    = isset( $_GET['caps'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_GET['caps'] ) ) : array();
 		$picked   = isset( $_GET['groups'] ) ? array_map( 'sanitize_text_field', (array) wp_unslash( $_GET['groups'] ) ) : array();
+		$trial    = ! empty( $_GET['trial'] );
 		// phpcs:enable
 
 		// A ticked group stands for every capability in it.
@@ -715,10 +982,11 @@ final class Screen implements Service {
 			}
 		}
 
-		$items = array();
+		$items    = array();
+		$trialled = true;
 		foreach ( array_unique( array_filter( $user_ids ) ) as $user_id ) {
 			$user = get_userdata( $user_id );
-			if ( ! $user ) {
+			if ( ! $user || ! Access::can_view_user( $user->ID ) ) {
 				continue;
 			}
 			$recommendation = $this->recommender->for_user( $user, time(), 2 );
@@ -726,13 +994,25 @@ final class Screen implements Service {
 			if ( $refused && 'role_right_sizer_self' !== $refused->get_error_code() && ! $recommendation ) {
 				$refused = null;
 			}
+			$problem = $refused ? $refused->get_error_message() : ( $recommendation ? '' : __( 'There is nothing to change for this user.', 'role-right-sizer' ) );
+			if ( '' === $problem && $trial ) {
+				if ( $this->trials->for_user( $user->ID ) ) {
+					$problem = __( 'This person is already on a trial.', 'role-right-sizer' );
+				} elseif ( ! in_array( $recommendation['type'], $this->trials->types(), true ) ) {
+					$problem = __( 'Only accounts that are still in use can be tried with a smaller role.', 'role-right-sizer' );
+				}
+			}
+			if ( '' === $problem && $recommendation && ! in_array( $recommendation['type'], $this->trials->types(), true ) ) {
+				$trialled = false;
+			}
 			$items[] = array(
 				'field'   => 'users[]',
 				'value'   => (string) $user->ID,
 				'title'   => $user->display_name . ' (' . $user->user_login . ')',
-				'change'  => $recommendation ? self::roles_label( $recommendation['current'] ) . ' → ' . self::role_label( $recommendation['proposed'] ) : '',
+				'before'  => $recommendation ? self::roles_label( $recommendation['current'] ) : '',
+				'after'   => $recommendation ? self::role_label( $recommendation['proposed'] ) : '',
 				'lost'    => $recommendation ? $recommendation['lost'] : array(),
-				'problem' => $refused ? $refused->get_error_message() : ( $recommendation ? '' : __( 'There is nothing to change for this user.', 'role-right-sizer' ) ),
+				'problem' => $problem,
 			);
 		}
 
@@ -748,18 +1028,21 @@ final class Screen implements Service {
 				$problem = __( 'Capabilities are never removed from the administrator role or a role that can manage options.', 'role-right-sizer' );
 			} elseif ( ! isset( $known[ $pair ] ) ) {
 				$problem = __( 'That capability is not recommended for removal from this role.', 'role-right-sizer' );
+			} elseif ( $trial ) {
+				$problem = __( 'Only people can be tried with a smaller role, not capabilities on a role.', 'role-right-sizer' );
 			}
-			$items[] = array(
+			$items[]  = array(
 				'field'   => 'caps[]',
 				'value'   => $pair,
 				/* translators: %s: role name. */
 				'title'   => sprintf( __( 'Role: %s', 'role-right-sizer' ), self::role_label( $parts[0] ) ),
-				/* translators: %s: capability. */
-				'change'  => isset( $parts[1] ) ? sprintf( __( 'Remove %s', 'role-right-sizer' ), $parts[1] ) : '',
+				'before'  => isset( $parts[1] ) ? $parts[1] : '',
+				'after'   => '',
 				'lost'    => isset( $parts[1] ) ? array( $parts[1] ) : array(),
 				'owner'   => isset( $known[ $pair ] ) ? self::owner_label( CapabilityOwners::normalize( $known[ $pair ]['owner'] ?? null ) ) : '',
 				'problem' => $problem,
 			);
+			$trialled = false;
 		}
 
 		$ready = array_filter(
@@ -768,31 +1051,39 @@ final class Screen implements Service {
 				return '' === $item['problem'];
 			}
 		);
+		$days  = $this->trials->days();
+		$count = count( $ready );
 		?>
 		<section class="axle-card rrs-confirm">
-			<h2 class="axle-card__title"><?php esc_html_e( 'Review the changes', 'role-right-sizer' ); ?></h2>
+			<h2 class="axle-card__title"><?php echo esc_html( $trial ? __( 'Review the trial', 'role-right-sizer' ) : __( 'Review the changes', 'role-right-sizer' ) ); ?></h2>
 			<?php if ( ! $items ) : ?>
 				<div class="axle-empty"><p><?php esc_html_e( 'Nothing was selected. Go back to the recommendations and tick what to change.', 'role-right-sizer' ); ?></p><a class="button" href="<?php echo esc_url( self::url() ); ?>"><?php esc_html_e( 'Back to the recommendations', 'role-right-sizer' ); ?></a></div>
 			<?php else : ?>
-				<p><?php esc_html_e( 'These accounts and roles lose the capabilities listed. Every change goes into the log under Changes, where one click undoes it.', 'role-right-sizer' ); ?></p>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 					<?php wp_nonce_field( self::ACTION ); ?>
 					<input type="hidden" name="action" value="<?php echo esc_attr( self::ACTION ); ?>">
-					<input type="hidden" name="task" value="apply">
+					<input type="hidden" name="task" value="<?php echo esc_attr( $trial ? 'trial_start' : 'apply' ); ?>">
 					<ul class="rrs-confirm-list">
 						<?php foreach ( $items as $item ) : ?>
 							<li class="<?php echo '' === $item['problem'] ? 'is-ready' : 'is-refused'; ?>">
 								<?php if ( '' === $item['problem'] ) : ?>
-									<span class="axle-badge axle-badge--info"><?php esc_html_e( 'Will be applied', 'role-right-sizer' ); ?></span>
+									<span class="axle-badge axle-badge--info"><?php echo esc_html( $trial ? __( 'Will be tried', 'role-right-sizer' ) : __( 'Will be applied', 'role-right-sizer' ) ); ?></span>
 								<?php else : ?>
 									<span class="axle-badge axle-badge--error"><?php esc_html_e( 'Will be skipped', 'role-right-sizer' ); ?></span>
 								<?php endif; ?>
 								<strong><?php echo esc_html( $item['title'] ); ?></strong>
-								<?php if ( '' !== $item['change'] ) : ?>
-									<span class="rrs-change"><?php echo esc_html( $item['change'] ); ?></span>
-								<?php endif; ?>
 								<?php if ( '' !== ( $item['owner'] ?? '' ) ) : ?>
 									<span class="rrs-owner axle-muted"><?php echo esc_html( $item['owner'] ); ?></span>
+								<?php endif; ?>
+								<?php if ( '' !== $item['after'] ) : ?>
+									<div class="axle-diff rrs-change">
+										<del><span class="screen-reader-text"><?php esc_html_e( 'Before:', 'role-right-sizer' ); ?></span> <?php echo esc_html( $item['before'] ); ?></del>
+										<ins><span class="screen-reader-text"><?php esc_html_e( 'After:', 'role-right-sizer' ); ?></span> <?php echo esc_html( $item['after'] ); ?></ins>
+									</div>
+								<?php elseif ( '' !== $item['before'] ) : ?>
+									<div class="axle-diff rrs-change">
+										<del><span class="screen-reader-text"><?php esc_html_e( 'Removed:', 'role-right-sizer' ); ?></span> <?php echo esc_html( $item['before'] ); ?></del>
+									</div>
 								<?php endif; ?>
 								<?php if ( '' === $item['problem'] ) : ?>
 									<input type="hidden" name="<?php echo esc_attr( $item['field'] ); ?>" value="<?php echo esc_attr( $item['value'] ); ?>">
@@ -808,17 +1099,44 @@ final class Screen implements Service {
 							</li>
 						<?php endforeach; ?>
 					</ul>
-					<p class="axle-actions">
-						<?php if ( $ready ) : ?>
-							<button type="submit" class="button button-primary">
-								<?php
-								/* translators: %s: number of changes. */
-								echo esc_html( sprintf( _n( 'Apply %s change', 'Apply %s changes', count( $ready ), 'role-right-sizer' ), number_format_i18n( count( $ready ) ) ) );
-								?>
-							</button>
-						<?php endif; ?>
-						<a class="button" href="<?php echo esc_url( self::url() ); ?>"><?php esc_html_e( 'Cancel', 'role-right-sizer' ); ?></a>
-					</p>
+					<div class="axle-confirm" role="group" aria-labelledby="rrs-confirm-text">
+						<p id="rrs-confirm-text">
+							<?php
+							if ( $trial ) {
+								/* translators: %s: number of days. */
+								echo esc_html( sprintf( _n( 'These people get the smaller role for %s day. Everything they could not do is recorded, and they can ask for their access back. You can restore the old role at any time from the Trials tab.', 'These people get the smaller role for %s days. Everything they could not do is recorded, and they can ask for their access back. You can restore the old role at any time from the Trials tab.', $days, 'role-right-sizer' ), number_format_i18n( $days ) ) );
+							} else {
+								esc_html_e( 'These accounts and roles lose the capabilities listed. Every change goes into the log under Changes, where one click undoes it.', 'role-right-sizer' );
+							}
+							?>
+						</p>
+						<div class="axle-actions">
+							<?php if ( $ready && $trial ) : ?>
+								<button type="submit" class="button button-primary">
+									<?php
+									/* translators: 1: number of days. */
+									echo esc_html( sprintf( _n( 'Try for %s day', 'Try for %s days', $days, 'role-right-sizer' ), number_format_i18n( $days ) ) );
+									?>
+								</button>
+							<?php elseif ( $ready ) : ?>
+								<button type="submit" class="button button-primary">
+									<?php
+									/* translators: %s: number of changes. */
+									echo esc_html( sprintf( _n( 'Apply %s change', 'Apply %s changes', $count, 'role-right-sizer' ), number_format_i18n( $count ) ) );
+									?>
+								</button>
+								<?php if ( $trialled ) : ?>
+									<button type="submit" class="button" name="task" value="trial_start">
+										<?php
+										/* translators: %s: number of days. */
+										echo esc_html( sprintf( _n( 'Try for %s day instead', 'Try for %s days instead', $days, 'role-right-sizer' ), number_format_i18n( $days ) ) );
+										?>
+									</button>
+								<?php endif; ?>
+							<?php endif; ?>
+							<a class="button" href="<?php echo esc_url( self::url() ); ?>"><?php esc_html_e( 'Cancel', 'role-right-sizer' ); ?></a>
+						</div>
+					</div>
 				</form>
 			<?php endif; ?>
 		</section>
@@ -829,10 +1147,18 @@ final class Screen implements Service {
 	 * Prints the change log.
 	 */
 	private function render_changes(): void {
-		$all = $this->changes->all();
+		// Changes to accounts this person may not edit would show which capabilities those accounts lost.
+		$all = array_values(
+			array_filter(
+				$this->changes->all(),
+				static function ( array $change ): bool {
+					return ! isset( $change['user_id'] ) || Access::can_view_user( (int) $change['user_id'] );
+				}
+			)
+		);
 		if ( ! $all ) {
 			?>
-			<div class="axle-empty rrs-empty"><p><?php esc_html_e( 'No changes yet. Changes you apply from the recommendations show up here, with an Undo button.', 'role-right-sizer' ); ?></p><a class="button" href="<?php echo esc_url( self::url() ); ?>"><?php esc_html_e( 'See the recommendations', 'role-right-sizer' ); ?></a></div>
+			<div class="axle-empty rrs-empty"><p><?php esc_html_e( 'No changes yet. When you apply a recommendation or start a trial, the change shows up here with an Undo button, and what it took away.', 'role-right-sizer' ); ?></p><a class="button" href="<?php echo esc_url( self::url() ); ?>"><?php esc_html_e( 'See the recommendations', 'role-right-sizer' ); ?></a></div>
 			<?php
 			return;
 		}
@@ -847,8 +1173,8 @@ final class Screen implements Service {
 				$batch[ (int) $change['batch'] ] = ( $batch[ (int) $change['batch'] ] ?? 0 ) + 1;
 			}
 		}
-		$format = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
 		?>
+		<div class="axle-scroll" tabindex="0" role="region" aria-label="<?php esc_attr_e( 'Change log', 'role-right-sizer' ); ?>">
 		<table class="widefat striped rrs-table rrs-changes">
 			<thead>
 				<tr>
@@ -863,7 +1189,7 @@ final class Screen implements Service {
 					<?php $by = get_userdata( (int) $change['by'] ); ?>
 					<tr data-change="<?php echo esc_attr( (string) $change['id'] ); ?>">
 						<td>
-							<?php echo esc_html( (string) wp_date( (string) $format, (int) $change['time'] ) ); ?><br>
+							<?php self::print_time( (int) $change['time'] ); ?><br>
 							<span class="axle-muted">
 								<?php
 								if ( $by ) {
@@ -880,33 +1206,50 @@ final class Screen implements Service {
 						<td>
 							<?php if ( 'unused_cap' === $change['kind'] ) : ?>
 								<strong><?php echo esc_html( self::role_label( (string) $change['role'] ) ); ?></strong>
-								<span class="rrs-change">
-									<?php
-									/* translators: %s: capability. */
-									echo esc_html( sprintf( __( 'Removed %s from the role', 'role-right-sizer' ), $change['cap'] ) );
-									?>
-								</span>
+								<div class="axle-diff rrs-change">
+									<del><span class="screen-reader-text"><?php esc_html_e( 'Removed:', 'role-right-sizer' ); ?></span> <?php echo esc_html( (string) $change['cap'] ); ?></del>
+								</div>
 							<?php else : ?>
 								<?php $user = get_userdata( (int) $change['user_id'] ); ?>
 								<strong><?php echo esc_html( $user ? $user->display_name : (string) $change['login'] ); ?></strong>
-								<span class="rrs-change"><?php echo esc_html( self::roles_label( (array) $change['before'] ) . ' → ' . self::roles_label( (array) $change['after'] ) ); ?></span>
+								<div class="axle-diff rrs-change">
+									<del><span class="screen-reader-text"><?php esc_html_e( 'Before:', 'role-right-sizer' ); ?></span> <?php echo esc_html( self::roles_label( (array) $change['before'] ) ); ?></del>
+									<ins><span class="screen-reader-text"><?php esc_html_e( 'After:', 'role-right-sizer' ); ?></span> <?php echo esc_html( self::roles_label( (array) $change['after'] ) ); ?></ins>
+								</div>
 							<?php endif; ?>
 						</td>
 						<td><?php $this->render_caps( (array) $change['lost'] ); ?></td>
 						<td class="rrs-undo">
 							<?php if ( $change['undone'] ) : ?>
 								<span class="axle-badge axle-badge--neutral"><?php esc_html_e( 'Undone', 'role-right-sizer' ); ?></span>
-								<span class="axle-muted">
-									<?php
-									echo esc_html( (string) wp_date( (string) $format, (int) $change['undone'] ) );
-									?>
-								</span>
+								<span class="axle-muted"><?php self::print_time( (int) $change['undone'] ); ?></span>
 							<?php else : ?>
 								<?php
-								$this->render_button( 'undo', __( 'Undo', 'role-right-sizer' ), 'secondary', array( 'change' => $change['id'] ) );
+								self::print_action(
+									'undo',
+									__( 'Undo', 'role-right-sizer' ),
+									array( 'change' => $change['id'] ),
+									array(
+										'confirm'       => 'unused_cap' === $change['kind']
+											/* translators: 1: capability, 2: role. */
+											? sprintf( __( 'This gives %1$s back to the %2$s role, for everyone with the role.', 'role-right-sizer' ), (string) $change['cap'], self::role_label( (string) $change['role'] ) )
+											/* translators: 1: roles they have now, 2: roles they get back. */
+											: sprintf( __( 'This changes the role from %1$s back to %2$s, and gives back the capabilities listed. The change stays in the log as undone.', 'role-right-sizer' ), self::roles_label( (array) $change['after'] ), self::roles_label( (array) $change['before'] ) ),
+										'confirm_label' => __( 'Undo this change', 'role-right-sizer' ),
+									)
+								);
 								if ( (int) $change['batch'] === (int) $change['id'] && ( $batch[ (int) $change['batch'] ] ?? 0 ) > 1 ) {
-									/* translators: %s: number of changes. */
-									$this->render_button( 'undo_batch', sprintf( __( 'Undo all %s in this batch', 'role-right-sizer' ), number_format_i18n( $batch[ (int) $change['batch'] ] ) ), 'link', array( 'batch' => $change['batch'] ) );
+									self::print_action(
+										'undo_batch',
+										/* translators: %s: number of changes. */
+										sprintf( __( 'Undo all %s in this batch', 'role-right-sizer' ), number_format_i18n( $batch[ (int) $change['batch'] ] ) ),
+										array( 'batch' => $change['batch'] ),
+										array(
+											'style'   => 'link',
+											'confirm' => __( 'This undoes every change of the batch that is not undone yet. Each one goes back to what it was before.', 'role-right-sizer' ),
+											'confirm_label' => __( 'Undo the whole batch', 'role-right-sizer' ),
+										)
+									);
 								}
 								?>
 							<?php endif; ?>
@@ -915,6 +1258,7 @@ final class Screen implements Service {
 				<?php endforeach; ?>
 			</tbody>
 		</table>
+		</div>
 		<?php if ( $pages > 1 ) : ?>
 			<div class="tablenav"><div class="tablenav-pages">
 				<?php
@@ -993,6 +1337,22 @@ final class Screen implements Service {
 				</tr>
 			</table>
 			</section>
+			<section class="axle-card">
+				<h2 class="axle-card__title"><?php esc_html_e( 'Trials', 'role-right-sizer' ); ?></h2>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><?php esc_html_e( 'When a trial ends with no denials', 'role-right-sizer' ); ?></th>
+						<td>
+							<fieldset>
+								<legend class="screen-reader-text"><?php esc_html_e( 'When a trial ends with no denials', 'role-right-sizer' ); ?></legend>
+								<label><input type="radio" name="trial_end_action" value="ask" <?php checked( 'ask', $settings['trial_end_action'] ); ?>> <?php esc_html_e( 'Ask me: keep the smaller role until I decide', 'role-right-sizer' ); ?></label><br>
+								<label><input type="radio" name="trial_end_action" value="keep" <?php checked( 'keep', $settings['trial_end_action'] ); ?>> <?php esc_html_e( 'Make the smaller role permanent', 'role-right-sizer' ); ?></label>
+								<p class="description"><?php esc_html_e( 'A trial where the person hit a wall is never made permanent on its own, whatever you choose here. Making it permanent keeps the change in the log, where Undo still works.', 'role-right-sizer' ); ?></p>
+							</fieldset>
+						</td>
+					</tr>
+				</table>
+			</section>
 			<?php submit_button( __( 'Save settings', 'role-right-sizer' ) ); ?>
 		</form>
 
@@ -1000,7 +1360,7 @@ final class Screen implements Service {
 			<h2 class="axle-card__title"><?php esc_html_e( 'Timing', 'role-right-sizer' ); ?></h2>
 			<dl class="axle-facts rrs-facts">
 				<dt><?php esc_html_e( 'Tracking began', 'role-right-sizer' ); ?></dt>
-				<dd><?php echo esc_html( self::date_label( $this->settings->tracking_started() ) ); ?></dd>
+				<dd><?php self::print_time( $this->settings->tracking_started() ); ?></dd>
 				<dt><?php esc_html_e( 'Learning period', 'role-right-sizer' ); ?></dt>
 				<?php /* translators: %s: number of days. */ ?>
 				<dd><?php echo esc_html( sprintf( _n( '%s day', '%s days', $this->settings->learning_days(), 'role-right-sizer' ), number_format_i18n( $this->settings->learning_days() ) ) ); ?></dd>
@@ -1064,32 +1424,10 @@ final class Screen implements Service {
 			</summary>
 			<ul>
 				<?php foreach ( $used as $cap => $last ) : ?>
-					<li><code><?php echo esc_html( (string) $cap ); ?></code> <span class="axle-muted"><?php echo esc_html( self::date_label( (int) $last ) ); ?></span></li>
+					<li><code><?php echo esc_html( (string) $cap ); ?></code> <span class="axle-muted"><?php self::print_time( (int) $last ); ?></span></li>
 				<?php endforeach; ?>
 			</ul>
 		</details>
-		<?php
-	}
-
-	/**
-	 * Prints a one-button form that runs a task.
-	 *
-	 * @param string $task   Task name.
-	 * @param string $label  Button text.
-	 * @param string $style  primary, secondary or link.
-	 * @param array  $fields Extra hidden fields.
-	 */
-	private function render_button( string $task, string $label, string $style, array $fields = array() ): void {
-		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="rrs-inline-form">
-			<?php wp_nonce_field( self::ACTION ); ?>
-			<input type="hidden" name="action" value="<?php echo esc_attr( self::ACTION ); ?>">
-			<input type="hidden" name="task" value="<?php echo esc_attr( $task ); ?>">
-			<?php foreach ( $fields as $name => $value ) : ?>
-				<input type="hidden" name="<?php echo esc_attr( (string) $name ); ?>" value="<?php echo esc_attr( (string) $value ); ?>">
-			<?php endforeach; ?>
-			<button type="submit" class="<?php echo esc_attr( 'link' === $style ? 'button-link' : 'button button-' . $style ); ?>"><?php echo esc_html( $label ); ?></button>
-		</form>
 		<?php
 	}
 
@@ -1100,15 +1438,21 @@ final class Screen implements Service {
 	 */
 	private static function error_messages(): array {
 		return array(
-			'role_right_sizer_self'       => __( 'You cannot change your own role here.', 'role-right-sizer' ),
-			'role_right_sizer_excluded'   => __( 'One of the selected accounts or roles is on the exclude list.', 'role-right-sizer' ),
-			'role_right_sizer_last_admin' => __( 'The last administrator keeps their role.', 'role-right-sizer' ),
-			'role_right_sizer_forbidden'  => __( 'You are not allowed to change one of the selected accounts.', 'role-right-sizer' ),
-			'role_right_sizer_nothing'    => __( 'One of the selected recommendations no longer applies.', 'role-right-sizer' ),
-			'role_right_sizer_not_found'  => __( 'That change or account no longer exists.', 'role-right-sizer' ),
-			'role_right_sizer_undone'     => __( 'That change was already undone.', 'role-right-sizer' ),
-			'role_right_sizer_gone'       => __( 'The account or role of that change no longer exists.', 'role-right-sizer' ),
-			'role_right_sizer_protected'  => __( 'Capabilities are never removed from the administrator role or a role that can manage options.', 'role-right-sizer' ),
+			'role_right_sizer_self'            => __( 'You cannot change your own role here.', 'role-right-sizer' ),
+			'role_right_sizer_excluded'        => __( 'One of the selected accounts or roles is on the exclude list.', 'role-right-sizer' ),
+			'role_right_sizer_last_admin'      => __( 'The last administrator keeps their role.', 'role-right-sizer' ),
+			'role_right_sizer_forbidden'       => __( 'You are not allowed to change one of the selected accounts.', 'role-right-sizer' ),
+			'role_right_sizer_nothing'         => __( 'One of the selected recommendations no longer applies.', 'role-right-sizer' ),
+			'role_right_sizer_not_found'       => __( 'That change or account no longer exists.', 'role-right-sizer' ),
+			'role_right_sizer_undone'          => __( 'That change was already undone.', 'role-right-sizer' ),
+			'role_right_sizer_gone'            => __( 'The account or role of that change no longer exists.', 'role-right-sizer' ),
+			'role_right_sizer_protected'       => __( 'Capabilities are never removed from the administrator role or a role that can manage options.', 'role-right-sizer' ),
+			'role_right_sizer_trial_exists'    => __( 'One of the selected people is already on a trial.', 'role-right-sizer' ),
+			'role_right_sizer_trial_type'      => __( 'Only accounts that are still in use can be tried with a smaller role.', 'role-right-sizer' ),
+			'role_right_sizer_trial_not_found' => __( 'That trial does not exist.', 'role-right-sizer' ),
+			'role_right_sizer_trial_closed'    => __( 'That trial is already over.', 'role-right-sizer' ),
+			'role_right_sizer_trial_denials'   => __( 'This trial has denials, so it needs a decision from a person.', 'role-right-sizer' ),
+			'role_right_sizer_nothing_picked'  => __( 'Nothing was selected, so nothing changed.', 'role-right-sizer' ),
 		);
 	}
 
@@ -1123,6 +1467,9 @@ final class Screen implements Service {
 		$errors = isset( $_GET['rrs_errors'] ) ? array_filter( array_map( 'sanitize_key', explode( ',', sanitize_text_field( wp_unslash( $_GET['rrs_errors'] ) ) ) ) ) : array();
 		// phpcs:enable
 		$message = '';
+		if ( in_array( $done, array( 'applied', 'trial_started' ), true ) && ! $count ) {
+			$done = 'nothing';
+		}
 
 		switch ( $done ) {
 			case 'applied':
@@ -1139,26 +1486,44 @@ final class Screen implements Service {
 			case 'saved':
 				$message = __( 'Settings saved. Recommendations rebuilt.', 'role-right-sizer' );
 				break;
+			case 'trial_started':
+				/* translators: 1: number of trials, 2: number of days. */
+				$message = sprintf( _n( 'Started %1$s trial for %2$s days. They have the smaller role until then, and you will see what they could not do.', 'Started %1$s trials for %2$s days. They have the smaller role until then, and you will see what they could not do.', $count, 'role-right-sizer' ), number_format_i18n( $count ), number_format_i18n( $this->trials->days() ) );
+				break;
+			case 'trial_restored':
+				$message = __( 'Gave the old role back and ended the trial.', 'role-right-sizer' );
+				break;
+			case 'trial_extended':
+				$message = __( 'Extended the trial.', 'role-right-sizer' );
+				break;
+			case 'trial_kept':
+				$message = __( 'The smaller role is permanent now. The change is still in the log, where Undo can put the old role back.', 'role-right-sizer' );
+				break;
+			case 'steps_dismissed':
+				$message = __( 'Dismissed. The recommendations stay on this screen.', 'role-right-sizer' );
+				break;
 		}
 
 		if ( '' !== $message ) {
 			?>
 			<div class="notice notice-success is-dismissible rrs-notice">
 				<p>
-					<?php echo esc_html( $message ); ?>
-					<?php if ( 'applied' === $done && $batch && $count ) : ?>
-						<?php $this->render_button( 'undo_batch', $count > 1 ? __( 'Undo all', 'role-right-sizer' ) : __( 'Undo', 'role-right-sizer' ), 'link', array( 'batch' => $batch ) ); ?>
+					<span class="rrs-notice-text"><?php echo esc_html( $message ); ?></span>
+					<?php if ( in_array( $done, array( 'applied', 'trial_started' ), true ) && $batch ) : ?>
+						<?php self::print_action( 'undo_batch', $count > 1 ? __( 'Undo all', 'role-right-sizer' ) : __( 'Undo', 'role-right-sizer' ), array( 'batch' => $batch ), array( 'style' => 'link' ) ); ?>
 					<?php endif; ?>
 				</p>
 			</div>
 			<?php
+		} elseif ( 'nothing' === $done && ! $errors ) {
+			printf( '<div class="notice notice-warning is-dismissible rrs-notice"><p><span class="rrs-notice-text">%s</span></p></div>', esc_html__( 'Nothing was selected, so nothing changed.', 'role-right-sizer' ) );
 		}
 
 		$messages = self::error_messages();
 		foreach ( array_unique( $errors ) as $code ) {
 			$code = 0 === strpos( $code, 'role_right_sizer_' ) ? $code : 'role_right_sizer_' . $code;
 			if ( isset( $messages[ $code ] ) ) {
-				printf( '<div class="notice notice-error is-dismissible"><p>%s</p></div>', esc_html( $messages[ $code ] ) );
+				printf( '<div class="notice notice-error is-dismissible rrs-notice"><p><span class="rrs-notice-text">%s</span></p></div>', esc_html( $messages[ $code ] ) );
 			}
 		}
 	}
@@ -1213,13 +1578,46 @@ final class Screen implements Service {
 				$args = array( 'rrs_done' => 'rebuilt' );
 				break;
 
+			case 'trial_start':
+				$users  = isset( $_POST['users'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['users'] ) ) : array();
+				$result = $this->trials->start_many( array_filter( $users ) );
+				$tab    = 'trials';
+				$args   = array(
+					'rrs_done'   => 'trial_started',
+					'rrs_count'  => count( $result['trials'] ),
+					'rrs_batch'  => $result['batch'],
+					'rrs_errors' => self::codes( $result['errors'] ),
+				);
+				break;
+
+			case 'trial_restore':
+			case 'trial_keep':
+			case 'trial_extend':
+				$id     = isset( $_POST['trial'] ) ? absint( $_POST['trial'] ) : 0;
+				$result = 'trial_restore' === $task ? $this->trials->restore( $id ) : ( 'trial_keep' === $task ? $this->trials->keep( $id ) : $this->trials->extend( $id ) );
+				$tab    = 'trials';
+				$done   = array(
+					'trial_restore' => 'trial_restored',
+					'trial_keep'    => 'trial_kept',
+					'trial_extend'  => 'trial_extended',
+				);
+				$args   = is_wp_error( $result ) ? array( 'rrs_errors' => self::codes( array( $result ) ) ) : array( 'rrs_done' => $done[ $task ] );
+				break;
+
+			case 'dismiss_steps':
+				update_user_meta( get_current_user_id(), 'role_right_sizer_steps_dismissed', 1 );
+				$tab  = 'recommendations';
+				$args = array( 'rrs_done' => 'steps_dismissed' );
+				break;
+
 			case 'settings':
 				$this->settings->save(
 					array(
-						'dormant_action' => isset( $_POST['dormant_action'] ) ? sanitize_key( wp_unslash( $_POST['dormant_action'] ) ) : 'remove',
-						'fallback_role'  => isset( $_POST['fallback_role'] ) ? sanitize_key( wp_unslash( $_POST['fallback_role'] ) ) : '',
-						'excluded_roles' => isset( $_POST['excluded_roles'] ) ? array_map( 'sanitize_key', (array) wp_unslash( $_POST['excluded_roles'] ) ) : array(),
-						'excluded_users' => self::user_ids( isset( $_POST['excluded_users'] ) ? sanitize_textarea_field( wp_unslash( $_POST['excluded_users'] ) ) : '' ),
+						'dormant_action'   => isset( $_POST['dormant_action'] ) ? sanitize_key( wp_unslash( $_POST['dormant_action'] ) ) : 'remove',
+						'fallback_role'    => isset( $_POST['fallback_role'] ) ? sanitize_key( wp_unslash( $_POST['fallback_role'] ) ) : '',
+						'excluded_roles'   => isset( $_POST['excluded_roles'] ) ? array_map( 'sanitize_key', (array) wp_unslash( $_POST['excluded_roles'] ) ) : array(),
+						'excluded_users'   => self::user_ids( isset( $_POST['excluded_users'] ) ? sanitize_textarea_field( wp_unslash( $_POST['excluded_users'] ) ) : '' ),
+						'trial_end_action' => isset( $_POST['trial_end_action'] ) ? sanitize_key( wp_unslash( $_POST['trial_end_action'] ) ) : 'ask',
 					)
 				);
 				$this->report->rebuild();
@@ -1342,6 +1740,12 @@ final class Screen implements Service {
 	 */
 	private function export(): void {
 		$recommendations = $this->report->get()['users'];
+		$recommendations = array_filter(
+			(array) $recommendations,
+			static function ( $recommendation ): bool {
+				return Access::can_view_user( (int) ( $recommendation['user_id'] ?? 0 ) );
+			}
+		);
 
 		nocache_headers();
 		header( 'Content-Type: text/csv; charset=utf-8' );
@@ -1361,6 +1765,10 @@ final class Screen implements Service {
 				)
 			);
 			foreach ( $users as $user ) {
+				// Capabilities and usage of an account this person may not edit stay out of the file.
+				if ( ! Access::can_view_user( $user->ID ) ) {
+					continue;
+				}
 				$row = self::csv_row(
 					$user,
 					isset( $recommendations[ $user->ID ] ) ? (array) $recommendations[ $user->ID ] : null,

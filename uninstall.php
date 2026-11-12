@@ -16,16 +16,17 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 function role_right_sizer_uninstall_site(): void {
 	global $wpdb;
 
-	foreach ( array( 'role_right_sizer_settings', 'role_right_sizer_tracking_started', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history' ) as $role_right_sizer_option ) {
+	foreach ( array( 'role_right_sizer_settings', 'role_right_sizer_tracking_started', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials' ) as $role_right_sizer_option ) {
 		delete_option( $role_right_sizer_option );
 	}
 
 	wp_clear_scheduled_hook( 'role_right_sizer_build' );
 	wp_clear_scheduled_hook( 'role_right_sizer_daily' );
+	wp_clear_scheduled_hook( 'role_right_sizer_trial_check' );
 
 	// Usage is kept per site, under this site's table prefix.
 	$role_right_sizer_prefix = $wpdb->get_blog_prefix();
-	foreach ( array( 'role_right_sizer_usage', 'role_right_sizer_abilities', 'role_right_sizer_last_active' ) as $role_right_sizer_key ) {
+	foreach ( array( 'role_right_sizer_usage', 'role_right_sizer_abilities', 'role_right_sizer_last_active', 'role_right_sizer_trial' ) as $role_right_sizer_key ) {
 		delete_metadata( 'user', 0, $role_right_sizer_prefix . $role_right_sizer_key, '', true );
 	}
 }

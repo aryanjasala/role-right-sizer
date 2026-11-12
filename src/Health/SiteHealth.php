@@ -7,10 +7,12 @@
 
 namespace AryanX\Axle\RoleRightSizer\Health;
 
+use AryanX\Axle\RoleRightSizer\Admin\AxleUi;
 use AryanX\Axle\RoleRightSizer\Admin\Screen;
 use AryanX\Axle\RoleRightSizer\Report;
 use AryanX\Axle\RoleRightSizer\Service;
 use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Trials;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -35,14 +37,23 @@ final class SiteHealth implements Service {
 	private Report $report;
 
 	/**
+	 * Trials of a smaller role.
+	 *
+	 * @var Trials
+	 */
+	private Trials $trials;
+
+	/**
 	 * Sets up the check.
 	 *
 	 * @param Settings $settings Settings and limits.
 	 * @param Report   $report   Saved recommendations.
+	 * @param Trials   $trials   Trials of a smaller role.
 	 */
-	public function __construct( Settings $settings, Report $report ) {
+	public function __construct( Settings $settings, Report $report, Trials $trials ) {
 		$this->settings = $settings;
 		$this->report   = $report;
+		$this->trials   = $trials;
 	}
 
 	/**
@@ -94,12 +105,10 @@ final class SiteHealth implements Service {
 
 		if ( $this->settings->is_learning() ) {
 			$result['label']       = __( 'Role Right-Sizer is still learning how accounts are used', 'role-right-sizer' );
-			$result['description'] = '<p>' . esc_html(
-				sprintf(
-					/* translators: %s: date. */
-					__( 'Recommendations show up on %s.', 'role-right-sizer' ),
-					Screen::date_label( $this->settings->learning_ends() )
-				)
+			$result['description'] = '<p>' . sprintf(
+				/* translators: %s: when, e.g. "in 3 weeks". */
+				esc_html__( 'Recommendations show up %s.', 'role-right-sizer' ),
+				AxleUi::relative_time( $this->settings->learning_ends() )
 			) . '</p>';
 
 			return $this->filtered( $result );
@@ -134,6 +143,29 @@ final class SiteHealth implements Service {
 						'role-right-sizer'
 					),
 					number_format_i18n( $roles )
+				)
+			) . '</p>';
+		}
+
+		$waiting = array_filter(
+			$this->trials->open(),
+			static function ( array $trial ): bool {
+				return 'ended' === $trial['status'];
+			}
+		);
+		if ( $waiting && 'good' === $result['status'] ) {
+			$result['status']         = 'recommended';
+			$result['badge']['color'] = 'orange';
+			/* translators: %s: number of trials. */
+			$result['label']       = sprintf( _n( '%s role trial is over and waiting for a decision', '%s role trials are over and waiting for a decision', count( $waiting ), 'role-right-sizer' ), number_format_i18n( count( $waiting ) ) );
+			$result['description'] = '<p>' . esc_html__( 'The person keeps the smaller role until you make it permanent or give the old role back.', 'role-right-sizer' ) . '</p>';
+			$result['actions']     = sprintf( '<p><a href="%s">%s</a></p>', esc_url( Screen::url( array( 'tab' => 'trials' ) ) ), esc_html__( 'Decide on the trials', 'role-right-sizer' ) );
+		} elseif ( $waiting ) {
+			$result['description'] .= '<p>' . esc_html(
+				sprintf(
+					/* translators: %s: number of trials. */
+					_n( '%s role trial is over and waiting for a decision.', '%s role trials are over and waiting for a decision.', count( $waiting ), 'role-right-sizer' ),
+					number_format_i18n( count( $waiting ) )
 				)
 			) . '</p>';
 		}
