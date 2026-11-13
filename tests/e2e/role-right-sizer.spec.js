@@ -1,7 +1,7 @@
 const { test, expect, wp, wpEval, logInAs } = require( './utils' );
 
 const SCREEN = '/wp-admin/users.php?page=role-right-sizer';
-const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials' ];
+const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials', 'role_right_sizer_reviews' ];
 // Capabilities the tests put on core roles, taken off again in reset().
 const TEST_CAPS = [ [ 'administrator', 'rrs_e2e_approve' ] ];
 const LOGINS = [ 'pat', 'sam', 'olive', 'gus', 'casey', 'jo' ];
@@ -461,11 +461,13 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( listed.status ).toBe( 200 );
 		expect( listed.body.map( ( ability ) => ability.name ).sort() ).toEqual( [
 			'role-right-sizer/apply-recommendation',
+			'role-right-sizer/export-review',
 			'role-right-sizer/extend-trial',
 			'role-right-sizer/get-changes',
 			'role-right-sizer/get-recommendations',
 			'role-right-sizer/get-user-usage',
 			'role-right-sizer/keep-trial',
+			'role-right-sizer/list-reviews',
 			'role-right-sizer/list-trials',
 			'role-right-sizer/restore-trial',
 			'role-right-sizer/start-trial',
@@ -651,6 +653,101 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( ( await rest( 'POST', path( 'start-trial' ), { input: { user_id: 1 } } ) ).status ).toBe( 400 );
 	} );
 
+	test( 'an access review: decide per person, save progress, finish through the change log, undo, export the evidence', async ( { browser, page, request } ) => {
+		await patWorksLikeAnEditor( browser );
+		trackingStarted( 120 );
+		backdate( 'sam' );
+		wp( 'role-right-sizer', 'report' );
+
+		await page.goto( `${ SCREEN }&tab=reviews` );
+		await expect( page.locator( '.rrs-reviews-empty' ) ).toContainText( 'No reviews yet.' );
+		await page.getByLabel( 'Name' ).fill( 'Q4 access review' );
+		await page.getByRole( 'button', { name: 'Start review' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Review started.' );
+		expect( roles( 'pat' ) ).toBe( 'administrator' );
+
+		// Your own account cannot be reduced, and finishing waits until everyone has a decision.
+		await expect( page.locator( 'tr[data-user="admin"]' ) ).toContainText( 'You cannot change your own role here.' );
+		await page.locator( 'tr[data-user="pat"]' ).getByLabel( 'Reduce to', { exact: true } ).check();
+		await page.locator( 'tr[data-user="pat"]' ).getByLabel( 'Role to reduce to' ).selectOption( 'editor' );
+		await page.locator( 'tr[data-user="pat"]' ).getByLabel( 'Note for' ).fill( 'Only writes and edits posts' );
+		await page.locator( 'tr[data-user="sam"]' ).getByLabel( 'Keep', { exact: true } ).check();
+		await page.getByRole( 'button', { name: 'Save decisions' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Saved 2 decisions.' );
+		await expect( page.locator( 'tr[data-user="pat"]' ).getByLabel( 'Reduce to', { exact: true } ) ).toBeChecked();
+		await expect( page.locator( '.rrs-finish' ) ).toContainText( 'no decision yet' );
+		await expect( page.getByRole( 'button', { name: 'Finish review' } ) ).toHaveCount( 0 );
+
+		// Keep the rest, in place, with a confirmation.
+		await page.locator( 'summary', { hasText: 'Keep everyone not decided yet' } ).click();
+		await page.getByRole( 'button', { name: 'Mark them Keep' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Saved 1 decision.' );
+
+		// The plan says what finishing takes away before anything happens.
+		await expect( page.locator( '.rrs-plan' ) ).toContainText( 'Pat' );
+		await expect( page.locator( '.rrs-plan' ) ).toContainText( 'manage_options' );
+		expect( roles( 'pat' ) ).toBe( 'administrator' );
+
+		await page.locator( 'summary', { hasText: 'Finish review' } ).click();
+		await expect( page.locator( '.rrs-finish .axle-confirm' ).first() ).toContainText( 'changes the role of 1 account now' );
+		await page.getByRole( 'button', { name: 'Apply and finish' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Review finished. Changed 1 account.' );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+		await expect( page.locator( 'tr[data-user="pat"]' ) ).toContainText( 'Applied' );
+
+		// The decisions are in the change log as one batch.
+		const logged = JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) );
+		expect( logged[ 0 ] ).toMatchObject( { kind: 'review', target: 'pat' } );
+
+		// The evidence: CSV and a printable report.
+		const csv = await page.request.get( await page.getByRole( 'link', { name: 'Download CSV' } ).getAttribute( 'href' ) );
+		expect( csv.headers()[ 'content-type' ] ).toContain( 'text/csv' );
+		const text = await csv.text();
+		expect( text ).toContain( '"Q4 access review"' );
+		expect( text ).toContain( 'Only writes and edits posts' );
+		const report = await page.request.get( await page.getByRole( 'link', { name: 'Open printable report' } ).getAttribute( 'href' ) );
+		const html = await report.text();
+		expect( html ).toContain( '<h1>Access review: Q4 access review</h1>' );
+		expect( html ).toContain( 'Reduce to Editor' );
+		expect( ( await request.get( '/wp-admin/admin-post.php?action=role_right_sizer&task=review_csv&review=1' ) ).status() ).not.toBe( 200 );
+
+		// Finished means finished: it cannot be discarded, and Undo gives the role back.
+		await expect( page.getByRole( 'button', { name: 'Discard review' } ) ).toHaveCount( 0 );
+		await page.locator( 'summary', { hasText: 'Undo all changes' } ).click();
+		await page.getByRole( 'button', { name: 'Undo the whole batch' } ).click();
+		expect( roles( 'pat' ) ).toBe( 'administrator' );
+
+		// Past reviews stay listed, and WP-CLI lists and exports them.
+		await page.goto( `${ SCREEN }&tab=reviews` );
+		await expect( page.locator( '.rrs-reviews' ) ).toContainText( 'Q4 access review' );
+		await expect( page.locator( '.rrs-reviews .axle-badge--good' ) ).toContainText( 'Finished' );
+		expect( JSON.parse( wp( 'role-right-sizer', 'review', 'list', '--format=json' ) )[ 0 ] ).toMatchObject( { status: 'finished', reduce: 1 } );
+		expect( wp( 'role-right-sizer', 'review', 'export', '1' ) ).toContain( 'Q4 access review' );
+		expect( wp( 'role-right-sizer', 'review', 'export', '1', '--format=html' ) ).toContain( 'Undone' );
+	} );
+
+	test( 'an access review from WP-CLI: decide, finish, and a Site Health note when the next one is overdue', async ( { browser } ) => {
+		await patWorksLikeAnEditor( browser );
+		trackingStarted( 120 );
+		wp( 'role-right-sizer', 'report' );
+
+		wp( 'role-right-sizer', 'review', 'start', '--name=CLI review' );
+		expect( () => wp( 'role-right-sizer', 'review', 'finish', '1', '--yes' ) ).toThrow( /no decision/ );
+		wp( 'role-right-sizer', 'review', 'decide', '1', 'pat', 'reduce', '--role=editor', '--note=Edits only' );
+		expect( () => wp( 'role-right-sizer', 'review', 'decide', '1', 'pat', 'reduce', '--role=nope' ) ).toThrow();
+		wp( 'role-right-sizer', 'review', 'keep-rest', '1' );
+		wp( 'role-right-sizer', 'review', 'finish', '1', '--yes' );
+		expect( roles( 'pat' ) ).toBe( 'editor' );
+		wp( 'role-right-sizer', 'undo', String( JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) )[ 0 ].id ) );
+
+		wpEval( "$log = get_option( 'role_right_sizer_reviews' ); $log['items'][0]['finished'] = time() - 100 * DAY_IN_SECONDS; update_option( 'role_right_sizer_reviews', $log, false );" );
+		const health = JSON.parse( wpEval( "echo wp_json_encode( ( new AryanX\\Axle\\RoleRightSizer\\Health\\SiteHealth( new AryanX\\Axle\\RoleRightSizer\\Settings(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->report(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->trials(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->reviews() ) )->run() );" ) );
+		expect( health.description ).toContain( 'review' );
+		wp( 'role-right-sizer', 'settings', '--review-interval=365' );
+		expect( JSON.parse( wp( 'role-right-sizer', 'settings', '--format=json' ) ).find( ( row ) => row.setting === 'review_interval' ).value ).toBe( '365' );
+		wp( 'role-right-sizer', 'settings', '--review-interval=90' );
+	} );
+
 	test( 'a first visit gets a Get started card, a Help tab and a link in the plugin row', async ( { page } ) => {
 		trackingStarted( 3 );
 		await page.goto( SCREEN );
@@ -663,7 +760,7 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( wpEval( "echo get_user_meta( 1, 'role_right_sizer_steps_dismissed', true );" ) ).toBe( '1' );
 
 		await page.locator( '#contextual-help-link' ).click();
-		for ( const tab of [ 'overview', 'recommendations', 'trials', 'changes', 'settings' ] ) {
+		for ( const tab of [ 'overview', 'recommendations', 'trials', 'reviews', 'changes', 'settings' ] ) {
 			await expect( page.locator( `#tab-link-role-right-sizer-${ tab }` ) ).toBeVisible();
 		}
 

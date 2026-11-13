@@ -18,6 +18,19 @@ At a wall the person sees "Your access was reduced 3 days ago as a trial. Ask fo
 
 On **Users > Right-Sizer > Trials** you can restore the old role at any time, extend the trial, or make the smaller role permanent. Restore and Make permanent ask first, in place. When the time is up the person keeps the smaller role and the trial waits for a decision, and whoever started it gets an email. With the setting "Make the smaller role permanent" a trial that ended with no denials closes on its own. A trial with denials is never closed on its own. Undoing the change from the Changes tab also closes the trial. Site Health notes trials that wait for a decision.
 
+## Access reviews
+
+**Users > Right-Sizer > Reviews** is for the question an auditor asks: when did you last go through who has access, and what did you decide?
+
+1. **Start a review.** It takes a snapshot of every account you may edit (`edit_user`): roles, last login and activity, the capabilities they used, and what Right-Sizer recommended at that moment. A name, a due date (14 days from now by default, `role_right_sizer_review_due_days`) and the people to tell are optional. Starting changes nothing. One review is open at a time. A site with more accounts than `role_right_sizer_review_limit` (5000) is refused, not cut short.
+2. **Decide for each account.** Keep, Reduce to a role (the recommended role is preselected) or Remove access, with an optional note. "Keep everyone not decided yet" marks the rest Keep. Decisions are saved with who made them and when, and several people can work on the same review. Your own account and accounts you may not change (`promote_user`) can only be kept.
+3. **Finish.** Every account needs a decision. The screen first lists what finishing would change and what it would skip, with the capabilities each person loses. Finishing applies Reduce and Remove through the change log as one batch, with the same protections as Apply: never your own account, never the last administrator, never the exclude list, never more access than the person has now, and not someone on a trial. An account that cannot be changed is recorded with the reason and does not stop the others. **Undo all changes** puts the batch back; the evidence then says which changes were undone.
+4. **Export the evidence.** **Download CSV** has one row per account: roles at the review, recommendation, decision, note, who decided and when, the outcome, the roles after, the capabilities lost and the change number. **Open printable report** is a plain HTML page with the same, who started and finished the review, and counts. Use the browser's Print command to save it as a PDF. Both leave out accounts you may not edit and say how many.
+
+An open review emails its reviewers a few days before the due date (`role_right_sizer_review_reminder_days`, 3) and again when it is overdue. Once `review_interval` days (90 by default, 0 for never, `role_right_sizer_review_interval_days`) have passed since the last finished review, an email goes to the site admin address once, and Site Health says a review is due. An open review past its date shows in Site Health too. Set the interval on the Settings tab or with `wp role-right-sizer settings --review-interval=60`.
+
+Abilities and WP-CLI list and export reviews. Agents cannot start, decide or finish one.
+
 ## How usage is recorded
 
 Everything is collected in memory during a request and written once, on `shutdown`. The same capability is written at most once an hour per user (`role_right_sizer_record_interval`), so a busy editor costs a few user meta writes an hour. Only capabilities the user really has are recorded, so a hook that fires for everyone cannot make a role look needed.
@@ -101,6 +114,20 @@ The report is built 100 users at a time. A build runs up to 20 batches in the re
 | `role_right_sizer_trial_days` | filter | `( int $days )`. How long a trial lasts, and how many days an extension adds. Default 14, 1 to 365 |
 | `role_right_sizer_trial_types` | filter | `( string[] $types )`. Recommendation types that can be tried first. Default `downgrade`. Others: `dormant`, `never` |
 | `role_right_sizer_trial_end_action` | filter | `( string $action )`. What happens when a trial ends with no denials: `ask` (default) or `keep`. A trial with denials is never closed on its own |
+| `role_right_sizer_review_interval_days` | filter | `( int $days )`. Days between access reviews before a reminder and a Site Health note. Default 90 or the saved setting, 0 to 730. 0 turns the reminder off |
+| `role_right_sizer_review_due_days` | filter | `( int $days )`. Days from now a new review is due, as the form's default. Default 14, 0 for no date |
+| `role_right_sizer_review_reminder_days` | filter | `( int $days )`. Days before the due date the reviewers get a reminder. Default 3 |
+| `role_right_sizer_review_limit` | filter | `( int $limit )`. Most accounts one review can hold. A bigger site is refused. Default 5000 |
+| `role_right_sizer_review_keep` | filter | `( int $keep )`. Finished reviews kept for the audit trail, newest first. Default 20 |
+| `role_right_sizer_review_used_limit` | filter | `( int $limit )`. Used capabilities kept per account in a snapshot, newest first. Default 12 |
+| `role_right_sizer_review_note_length` | filter | `( int $length )`. Longest note on an account. Default 500 |
+| `role_right_sizer_review_recipients` | filter | `( string[] $to, array $review, string $event )`. Who is emailed. Events: `started`, `due_soon`, `overdue`, `next`. Default whoever started it and the reviewers, or the admin address |
+| `role_right_sizer_review_email` | filter | `( array\|false $email, string $event, array $review )`. `to`, `subject` and `message` of the email. Return false to send nothing |
+| `role_right_sizer_review_started` | action | `( array $review )`. A review started |
+| `role_right_sizer_review_decided` | action | `( array $entry, int $review_id )`. A reviewer decided about an account. The account has not changed yet |
+| `role_right_sizer_review_finished` | action | `( array $review )`. A review was finished and its decisions applied. Each entry has its `result` |
+| `role_right_sizer_review_discarded` | action | `( array $review )`. An open review was discarded |
+| `role_right_sizer_review_reminder_sent` | action | `( array $review, string $event )`. A reminder went out. `$review` is empty for `next`. |
 | `role_right_sizer_trial_denial` | filter | `( array\|null $denial, array\|null $trial )`. A refusal before it is recorded: `key`, `kind` (`screen`, `rest`, `action`), `label`, `cap`. Return null to leave it out |
 | `role_right_sizer_trial_denial_limit` | filter | `( int $limit )`. Different denials one trial keeps, oldest first out. Default 50, 5 to 500 |
 | `role_right_sizer_trial_cap_labels` | filter | `( string[] $labels )`. Capability => words for what the person could not do |
@@ -147,7 +174,9 @@ add_action( 'role_right_sizer_applied', function ( $change ) {
 
 A trial is an array with `id`, `user_id`, `login`, `by`, `started`, `ends`, `change_id` and `batch` (the change in the log, so Undo works), `before`, `after`, `lost`, `status` (`active`, `ended`, `kept` or `restored`), `closed`, `auto`, `requested` and `denials` (`key => [ kind, label, cap, count, first, last ]`).
 
-A change is an array with `id`, `batch`, `time`, `by` (user ID, 0 for WP-CLI), `kind` (`downgrade`, `dormant`, `never` or `unused_cap`), `lost`, `undone`, and either `user_id`, `login`, `before` and `after` (role lists) or `role` and `cap`.
+A change is an array with `id`, `batch`, `time`, `by` (user ID, 0 for WP-CLI), `kind` (`downgrade`, `dormant`, `never` or `unused_cap`), `lost`, `undone`, and either `user_id`, `login`, `before` and `after` (role lists) or `role` and `cap`. Changes made by an access review have the kind `review`.
+
+A review is an array with `id`, `name`, `status` (`open` or `finished`), `started`, `by`, `due`, `reviewers` (user IDs), `reminded`, `finished`, `finished_by`, `batch` (the change log batch of its changes) and `entries` (`user_id => entry`). An entry has `user_id`, `login`, `name`, `roles`, `last_login`, `last_active`, `used`, `type`, `proposed` and `lost` (the recommendation then), `decision` (`keep`, `reduce`, `remove`), `role`, `note`, `reviewer`, `decided`, `result` (`status`: `kept`, `applied`, `unchanged`, `failed` or `gone`, plus `message`, `change_id`, `before`, `after`, `lost`) and `erased`.
 
 ### JavaScript hooks
 
@@ -177,6 +206,8 @@ On WordPress 6.9 and later, Role Right-Sizer registers [abilities](https://devel
 | `role-right-sizer/undo-change` | Destructive. Undoes `change_id`, or its whole batch with `batch: true` |
 | `role-right-sizer/get-changes` | Read-only. The change log, newest first, up to `limit`. Changes to accounts you may not edit are left out |
 | `role-right-sizer/list-trials` | Read-only. Trials, optionally only `open` (active or over and waiting), `active`, `ended`, `kept` or `restored`: who, days left, the roles, whether they asked for access back, and every denial with its count |
+| `role-right-sizer/list-reviews` | Read-only. Access reviews, optionally only `open` or `finished`: name, dates, how many accounts and how many Keep, Reduce and Remove decisions, and the change log batch |
+| `role-right-sizer/export-review` | Read-only. The evidence of `review_id` as `csv` (default) or `html`. Accounts you may not edit are left out. Agents cannot start, decide or finish a review |
 | `role-right-sizer/start-trial` | Destructive. Gives `user_id` their recommended smaller role for `days` (default 14) and returns the trial. Refused (400) for your own account, the last administrator, the exclude list and accounts that are not in use |
 | `role-right-sizer/restore-trial` | Destructive. Gives the person their old role back and closes the trial |
 | `role-right-sizer/extend-trial` | Adds `days` to a trial, counted from now when its time is up |
@@ -194,13 +225,21 @@ wp role-right-sizer apply --all [--include-plugin-caps] [--dry-run] [--yes]
 wp role-right-sizer changes [--format=...]
 wp role-right-sizer undo <change-id> [--batch]
 wp role-right-sizer forget <user>
-wp role-right-sizer settings [--dormant-action=remove|fallback] [--fallback-role=<role>] [--trial-end-action=ask|keep]
+wp role-right-sizer settings [--dormant-action=remove|fallback] [--fallback-role=<role>] [--trial-end-action=ask|keep] [--review-interval=<days>]
 wp role-right-sizer trial start <user>... [--days=<days>]
 wp role-right-sizer trial list [--status=open|active|ended|kept|restored] [--format=...]
 wp role-right-sizer trial denials <trial-id> [--format=...]
 wp role-right-sizer trial restore <trial-id>
 wp role-right-sizer trial extend <trial-id> [--days=<days>]
 wp role-right-sizer trial keep <trial-id>
+wp role-right-sizer review start [--name=<name>] [--due=<YYYY-MM-DD>] [--reviewers=<users>]
+wp role-right-sizer review list [--status=open|finished] [--format=...]
+wp role-right-sizer review show <review-id> [--undecided] [--format=...]
+wp role-right-sizer review decide <review-id> <user> <keep|reduce|remove> [--role=<role>] [--note=<text>]
+wp role-right-sizer review keep-rest <review-id>
+wp role-right-sizer review finish <review-id> [--yes]
+wp role-right-sizer review discard <review-id> [--yes]
+wp role-right-sizer review export <review-id> [--format=csv|html] [--file=<path>]
 ```
 
 `report` builds the recommendations first unless `--cached` is given. `--all-users` lists every user in the columns of the CSV download. `report` lists unused capabilities with their `owner` and `owner_active`. `apply --all` applies every user and role recommendation as one batch, except capabilities that belong to an active plugin, post type or taxonomy; it names those and leaves them alone unless you add `--include-plugin-caps`. Users can be IDs, usernames or email addresses. WP-CLI runs without a logged-in user unless you pass `--user`, so the "not your own account" rule only applies with `--user`. The last administrator rule always applies.
@@ -234,15 +273,16 @@ $plugin->applier()->undo_batch( $batch );
 | `role_right_sizer_report` option | The last report and the state of a build in progress |
 | `role_right_sizer_changes` option | The change log, newest first, at most 500 changes |
 | `role_right_sizer_trials` option | The trials with their denials, newest first. Closed trials go after a year. Not autoloaded |
+| `role_right_sizer_reviews` option | Access reviews with every decision, note and result, newest first, at most 20 finished reviews. Not autoloaded |
 | `{prefix}role_right_sizer_trial` user option | The ID of the open trial of a person, so only they are watched. Removed when the trial closes |
 | `role_right_sizer_steps_dismissed` user meta | Set when someone dismisses the Get started card |
 | `role_right_sizer_capability_history` option | When each role gained each capability, and the plugin folder that added it when known: `role => [ cap => [ first_seen, folder ] ]`. Updated when the roles change and on every report build. Not autoloaded |
 
-`{prefix}` is the site's table prefix, such as `wp_` or `wp_2_`. The cron events are `role_right_sizer_daily`, `role_right_sizer_build` and, while a trial is open, `role_right_sizer_trial_check` (hourly). Deactivating stops them. Uninstalling removes all of the above on every site of a network. Roles and capabilities stay as they are: applied changes are not undone.
+`{prefix}` is the site's table prefix, such as `wp_` or `wp_2_`. Access reminders run on the daily event. The cron events are `role_right_sizer_daily`, `role_right_sizer_build` and, while a trial is open, `role_right_sizer_trial_check` (hourly). Deactivating stops them. Uninstalling removes all of the above on every site of a network. Roles and capabilities stay as they are: applied changes are not undone.
 
 ## Privacy
 
-The usage record, the change log and the trials are personal data: when someone was active, what they did, and what they could not do during a trial. They take part in **Tools > Export Personal Data** and **Tools > Erase Personal Data**. Erasing deletes the usage record, the changes to that person's account and their trials, and keeps changes and trials they started without their name. Closed trials are removed after a year (`role_right_sizer_trial_retention_days`). **Settings > Privacy** gets suggested text.
+The usage record, the change log, the trials and the access reviews are personal data: when someone was active, what they did, and what they could not do during a trial. They take part in **Tools > Export Personal Data** and **Tools > Erase Personal Data**. Erasing deletes the usage record, the changes to that person's account and their trials, and keeps changes and trials they started without their name. In access reviews the person's entry loses its name, login, roles, activity and note but keeps the decision, so the counts in the evidence still add up, and their name goes from every decision they made. Closed trials are removed after a year (`role_right_sizer_trial_retention_days`). **Settings > Privacy** gets suggested text.
 
 ## Multisite
 

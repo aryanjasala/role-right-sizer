@@ -74,6 +74,13 @@ final class Abilities implements Service {
 	private Trials $trials;
 
 	/**
+	 * Access reviews.
+	 *
+	 * @var Reviews
+	 */
+	private Reviews $reviews;
+
+	/**
 	 * Sets up the abilities.
 	 *
 	 * @param Settings    $settings    Settings and limits.
@@ -83,9 +90,11 @@ final class Abilities implements Service {
 	 * @param Changes     $changes     Change log.
 	 * @param Applier     $applier     Applies and undoes changes.
 	 * @param Trials      $trials      Trials of a smaller role.
+	 * @param Reviews     $reviews     Access reviews.
 	 */
-	public function __construct( Settings $settings, Store $store, Recommender $recommender, Report $report, Changes $changes, Applier $applier, Trials $trials ) {
+	public function __construct( Settings $settings, Store $store, Recommender $recommender, Report $report, Changes $changes, Applier $applier, Trials $trials, Reviews $reviews ) {
 		$this->trials      = $trials;
+		$this->reviews     = $reviews;
 		$this->settings    = $settings;
 		$this->store       = $store;
 		$this->recommender = $recommender;
@@ -486,6 +495,89 @@ final class Abilities implements Service {
 		);
 
 		$this->ability(
+			'list-reviews',
+			__( 'List access reviews', 'role-right-sizer' ),
+			__( 'Access reviews with their due date and how many accounts have a Keep, Reduce or Remove decision. Read only: agents cannot start, decide or finish a review.', 'role-right-sizer' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'status' => array(
+						'type' => 'string',
+						'enum' => array( 'open', 'finished' ),
+					),
+				),
+				'additionalProperties' => false,
+				'default'              => array(),
+			),
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'reviews' => array(
+						'type'  => 'array',
+						'items' => array(
+							'type'       => 'object',
+							'properties' => array(
+								'id'       => array( 'type' => 'integer' ),
+								'name'     => array( 'type' => 'string' ),
+								'status'   => array( 'type' => 'string' ),
+								'started'  => array( 'type' => 'string' ),
+								'due'      => array( 'type' => 'string' ),
+								'finished' => array( 'type' => 'string' ),
+								'accounts' => array( 'type' => 'integer' ),
+								'decided'  => array( 'type' => 'integer' ),
+								'keep'     => array( 'type' => 'integer' ),
+								'reduce'   => array( 'type' => 'integer' ),
+								'remove'   => array( 'type' => 'integer' ),
+								'batch'    => array( 'type' => 'integer' ),
+							),
+						),
+					),
+				),
+			),
+			array( $this, 'list_reviews' ),
+			$can_manage,
+			array(
+				'readonly'   => true,
+				'idempotent' => true,
+			)
+		);
+
+		$this->ability(
+			'export-review',
+			__( 'Export an access review', 'role-right-sizer' ),
+			__( 'The evidence for one review as CSV or a printable HTML report: who reviewed, when, each decision and note, and what changed. Accounts you may not edit are left out.', 'role-right-sizer' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'review_id' => array(
+						'type'    => 'integer',
+						'minimum' => 1,
+					),
+					'format'    => array(
+						'type'    => 'string',
+						'enum'    => array( 'csv', 'html' ),
+						'default' => 'csv',
+					),
+				),
+				'required'             => array( 'review_id' ),
+				'additionalProperties' => false,
+			),
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'format'  => array( 'type' => 'string' ),
+					'content' => array( 'type' => 'string' ),
+				),
+			),
+			array( $this, 'export_review' ),
+			$can_manage,
+			array(
+				'readonly'   => true,
+				'idempotent' => true,
+			)
+		);
+
+		$this->ability(
 			'start-trial',
 			__( 'Start a role trial', 'role-right-sizer' ),
 			__( 'Gives a user their recommended smaller role for a number of days and records what they could not do. The change is logged, and restore-trial gives the old role back. Refused for your own account, the last administrator, anything on the exclude list and accounts that are not active.', 'role-right-sizer' ),
@@ -577,6 +669,63 @@ final class Abilities implements Service {
 				'destructive' => false,
 				'idempotent'  => false,
 			)
+		);
+	}
+
+	/**
+	 * Ability: the access reviews.
+	 *
+	 * Agents can read reviews and export the evidence. Deciding, finishing and
+	 * discarding are for people, so there is no ability for them.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array
+	 */
+	public function list_reviews( $input = null ): array {
+		$status  = (string) ( ( (array) $input )['status'] ?? '' );
+		$reviews = array();
+		foreach ( $this->reviews->all() as $review ) {
+			if ( '' !== $status && $review['status'] !== $status ) {
+				continue;
+			}
+			$progress  = Reviews::progress( $review );
+			$reviews[] = array(
+				'id'       => (int) $review['id'],
+				'name'     => (string) $review['name'],
+				'status'   => (string) $review['status'],
+				'started'  => self::iso( (int) $review['started'] ),
+				'due'      => self::iso( (int) $review['due'] ),
+				'finished' => self::iso( (int) $review['finished'] ),
+				'accounts' => $progress['total'],
+				'decided'  => $progress['decided'],
+				'keep'     => $progress['keep'],
+				'reduce'   => $progress['reduce'],
+				'remove'   => $progress['remove'],
+				'batch'    => (int) $review['batch'],
+			);
+		}
+
+		return array( 'reviews' => $reviews );
+	}
+
+	/**
+	 * Ability: the evidence of one review.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array|\WP_Error
+	 */
+	public function export_review( $input = null ) {
+		$input  = (array) $input;
+		$review = $this->reviews->get( (int) ( $input['review_id'] ?? 0 ) );
+		if ( ! $review ) {
+			return new \WP_Error( 'role_right_sizer_review_not_found', __( 'That review does not exist.', 'role-right-sizer' ), array( 'status' => 404 ) );
+		}
+
+		$html = 'html' === ( $input['format'] ?? 'csv' );
+
+		return array(
+			'format'  => $html ? 'html' : 'csv',
+			'content' => $html ? $this->reviews->html( $review ) : $this->reviews->csv( $review ),
 		);
 	}
 

@@ -421,6 +421,9 @@ final class Command {
 	 * [--trial-end-action=<action>]
 	 * : What happens when a trial ends with no denials: ask (wait for a decision) or keep (make the smaller role permanent).
 	 *
+	 * [--review-interval=<days>]
+	 * : Days between access reviews before a reminder goes out, 0 to 730. 0 turns the reminder off.
+	 *
 	 * [--format=<format>]
 	 * : table, csv, json or yaml.
 	 * ---
@@ -431,6 +434,7 @@ final class Command {
 	 *
 	 *     wp role-right-sizer settings
 	 *     wp role-right-sizer settings --trial-end-action=keep
+	 *     wp role-right-sizer settings --review-interval=60
 	 *
 	 * @param array $args       Positional arguments.
 	 * @param array $assoc_args Named arguments.
@@ -440,6 +444,7 @@ final class Command {
 			'dormant-action'   => 'dormant_action',
 			'fallback-role'    => 'fallback_role',
 			'trial-end-action' => 'trial_end_action',
+			'review-interval'  => 'review_interval',
 		);
 		$choices = array(
 			'dormant_action'   => array( 'remove', 'fallback' ),
@@ -451,6 +456,9 @@ final class Command {
 				continue;
 			}
 			$value = (string) $assoc_args[ $flag ];
+			if ( 'review_interval' === $key && ( ! ctype_digit( $value ) || (int) $value > 730 ) ) {
+				\WP_CLI::error( '--review-interval must be a number of days from 0 to 730.' );
+			}
 			if ( isset( $choices[ $key ] ) && ! in_array( $value, $choices[ $key ], true ) ) {
 				\WP_CLI::error( sprintf( '--%s must be one of: %s.', $flag, implode( ', ', $choices[ $key ] ) ) );
 			}

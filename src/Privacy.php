@@ -39,13 +39,22 @@ final class Privacy implements Service {
 	private Trials $trials;
 
 	/**
+	 * Access reviews.
+	 *
+	 * @var Reviews
+	 */
+	private Reviews $reviews;
+
+	/**
 	 * Sets up the privacy tools.
 	 *
 	 * @param Store   $store   Recorded usage.
 	 * @param Changes $changes Change log.
 	 * @param Trials  $trials  Trials of a smaller role.
+	 * @param Reviews $reviews Access reviews.
 	 */
-	public function __construct( Store $store, Changes $changes, Trials $trials ) {
+	public function __construct( Store $store, Changes $changes, Trials $trials, Reviews $reviews ) {
+		$this->reviews = $reviews;
 		$this->store   = $store;
 		$this->changes = $changes;
 		$this->trials  = $trials;
@@ -204,6 +213,54 @@ final class Privacy implements Service {
 					),
 				);
 			}
+
+			foreach ( $this->reviews->all() as $review ) {
+				$entry = $review['entries'][ $user->ID ] ?? null;
+				if ( $entry && empty( $entry['erased'] ) ) {
+					$data[] = array(
+						'group_id'    => 'role-right-sizer-reviews',
+						'group_label' => __( 'Access reviews', 'role-right-sizer' ),
+						'item_id'     => 'role-right-sizer-review-' . $review['id'],
+						'data'        => array(
+							array(
+								'name'  => __( 'Review', 'role-right-sizer' ),
+								'value' => (string) $review['name'],
+							),
+							array(
+								'name'  => __( 'Roles at the review', 'role-right-sizer' ),
+								'value' => Reviews::roles_text( (array) $entry['roles'] ),
+							),
+							array(
+								'name'  => __( 'Decision', 'role-right-sizer' ),
+								'value' => $this->reviews->decision_text( $entry ),
+							),
+							array(
+								'name'  => __( 'Note', 'role-right-sizer' ),
+								'value' => (string) $entry['note'],
+							),
+						),
+					);
+				}
+				foreach ( (array) $review['entries'] as $other ) {
+					if ( (int) $other['reviewer'] === $user->ID ) {
+						$data[] = array(
+							'group_id'    => 'role-right-sizer-review-decisions',
+							'group_label' => __( 'Access review decisions you made', 'role-right-sizer' ),
+							'item_id'     => 'role-right-sizer-review-' . $review['id'] . '-' . $other['user_id'],
+							'data'        => array(
+								array(
+									'name'  => __( 'Review', 'role-right-sizer' ),
+									'value' => (string) $review['name'],
+								),
+								array(
+									'name'  => __( 'Date', 'role-right-sizer' ),
+									'value' => self::time( (int) $other['decided'] ),
+								),
+							),
+						);
+					}
+				}
+			}
 		}
 
 		return array(
@@ -226,6 +283,7 @@ final class Privacy implements Service {
 			$removed = $this->store->forget( $user->ID );
 			$removed = $this->changes->forget_user( $user->ID ) || $removed;
 			$removed = $this->trials->erase( $user->ID ) || $removed;
+			$removed = $this->reviews->erase( $user->ID ) || $removed;
 
 			/** This action is documented in src/Cli/Command.php */
 			do_action( 'role_right_sizer_usage_forgotten', $user->ID );
@@ -249,7 +307,7 @@ final class Privacy implements Service {
 
 		wp_add_privacy_policy_content(
 			__( 'Role Right-Sizer', 'role-right-sizer' ),
-			'<p>' . esc_html__( 'When you are logged in, this site records which permissions your account used (such as publishing posts or managing plugins), when you last logged in and when you were last active. Each permission is stored with the first and last time it was used. Administrators use this to give every account only the access it needs. The record is kept for as long as the account exists, and changes to your role are kept in a log so they can be undone. If your role is reduced as a trial, the site also records what you could not do during the trial, such as opening a screen you no longer have access to, and keeps that record for a year after the trial ends.', 'role-right-sizer' ) . '</p>'
+			'<p>' . esc_html__( 'When you are logged in, this site records which permissions your account used (such as publishing posts or managing plugins), when you last logged in and when you were last active. Each permission is stored with the first and last time it was used. Administrators use this to give every account only the access it needs. The record is kept for as long as the account exists, and changes to your role are kept in a log so they can be undone. If your role is reduced as a trial, the site also records what you could not do during the trial, such as opening a screen you no longer have access to, and keeps that record for a year after the trial ends. If an administrator runs an access review, the site keeps a snapshot of your role, what you used and the decision about your account, with any note, as evidence for audits.', 'role-right-sizer' ) . '</p>'
 		);
 	}
 

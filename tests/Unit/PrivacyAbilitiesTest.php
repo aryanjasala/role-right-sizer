@@ -13,6 +13,7 @@ use AryanX\Axle\RoleRightSizer\Changes;
 use AryanX\Axle\RoleRightSizer\Privacy;
 use AryanX\Axle\RoleRightSizer\Recommender;
 use AryanX\Axle\RoleRightSizer\Report;
+use AryanX\Axle\RoleRightSizer\Reviews;
 use AryanX\Axle\RoleRightSizer\Settings;
 use AryanX\Axle\RoleRightSizer\Trials;
 use AryanX\Axle\RoleRightSizer\Usage\Store;
@@ -58,6 +59,16 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 			}
 		);
 		Functions\when( 'wp_register_ability_category' )->justReturn( null );
+		Functions\when( 'sanitize_text_field' )->alias( 'trim' );
+		Functions\when( 'sanitize_textarea_field' )->alias( 'trim' );
+		Functions\when( 'wp_timezone' )->justReturn( new \DateTimeZone( 'UTC' ) );
+		Functions\when( 'is_email' )->justReturn( true );
+		Functions\when( 'wp_mail' )->justReturn( true );
+		Functions\when( 'get_locale' )->justReturn( 'en_US' );
+		Functions\when( 'get_bloginfo' )->justReturn( 'Site' );
+		Functions\when( 'home_url' )->justReturn( 'https://example.com' );
+		Functions\when( 'admin_url' )->justReturn( 'https://example.com/wp-admin/' );
+		Functions\when( 'add_query_arg' )->justReturn( 'https://example.com/wp-admin/users.php' );
 		Functions\when( 'wp_schedule_event' )->justReturn( true );
 		Functions\when( 'translate_user_role' )->returnArg();
 		Functions\when( 'number_format_i18n' )->alias( 'strval' );
@@ -66,7 +77,7 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 	/**
 	 * The plugin's parts, wired like Plugin does.
 	 *
-	 * @return array{0: Abilities, 1: Privacy, 2: Changes, 3: Report, 4: Trials}
+	 * @return array{0: Abilities, 1: Privacy, 2: Changes, 3: Report, 4: Trials, 5: Reviews}
 	 */
 	private function parts(): array {
 		$settings    = new Settings();
@@ -78,7 +89,9 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 
 		$trials      = new Trials( $settings, $applier, $recommender, $report );
 
-		return array( new Abilities( $settings, $store, $recommender, $report, $changes, $applier, $trials ), new Privacy( $store, $changes, $trials ), $changes, $report, $trials );
+		$reviews     = new Reviews( $settings, $applier, $report, $store, $changes, $trials );
+
+		return array( new Abilities( $settings, $store, $recommender, $report, $changes, $applier, $trials, $reviews ), new Privacy( $store, $changes, $trials, $reviews ), $changes, $report, $trials, $reviews );
 	}
 
 	public function test_the_exporter_covers_activity_usage_and_changes(): void {
@@ -112,13 +125,19 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 		list( $abilities ) = $this->parts();
 		$abilities->register_abilities();
 
-		$this->assertSame( array( 'role-right-sizer/get-recommendations', 'role-right-sizer/get-user-usage', 'role-right-sizer/apply-recommendation', 'role-right-sizer/undo-change', 'role-right-sizer/get-changes', 'role-right-sizer/list-trials', 'role-right-sizer/start-trial', 'role-right-sizer/restore-trial', 'role-right-sizer/extend-trial', 'role-right-sizer/keep-trial' ), array_keys( $this->registered ) );
+		$this->assertSame( array( 'role-right-sizer/get-recommendations', 'role-right-sizer/get-user-usage', 'role-right-sizer/apply-recommendation', 'role-right-sizer/undo-change', 'role-right-sizer/get-changes', 'role-right-sizer/list-trials', 'role-right-sizer/list-reviews', 'role-right-sizer/export-review', 'role-right-sizer/start-trial', 'role-right-sizer/restore-trial', 'role-right-sizer/extend-trial', 'role-right-sizer/keep-trial' ), array_keys( $this->registered ) );
 		foreach ( $this->registered as $args ) {
 			$this->assertTrue( $args['meta']['public'] );
 			$this->assertTrue( $args['meta']['mcp']['public'] );
 			$this->assertTrue( $args['meta']['show_in_rest'] );
 		}
 		$this->assertTrue( $this->registered['role-right-sizer/get-recommendations']['meta']['annotations']['readonly'] );
+		// Agents can read reviews and export the evidence. Nothing lets them decide.
+		$this->assertTrue( $this->registered['role-right-sizer/list-reviews']['meta']['annotations']['readonly'] );
+		$this->assertTrue( $this->registered['role-right-sizer/export-review']['meta']['annotations']['readonly'] );
+		$this->assertArrayNotHasKey( 'role-right-sizer/start-review', $this->registered );
+		$this->assertArrayNotHasKey( 'role-right-sizer/decide-review', $this->registered );
+		$this->assertArrayNotHasKey( 'role-right-sizer/finish-review', $this->registered );
 		$this->assertTrue( $this->registered['role-right-sizer/apply-recommendation']['meta']['annotations']['destructive'] );
 		$this->assertFalse( $this->registered['role-right-sizer/undo-change']['meta']['annotations']['idempotent'] );
 
@@ -362,5 +381,32 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 		$privacy->erase( 'pat@example.com' );
 		$this->assertSame( array(), $trials->all() );
 		$this->assertNotNull( $abilities );
+	}
+
+	public function test_the_exporter_and_eraser_cover_access_reviews(): void {
+		list( $abilities, $privacy, , , , $reviews ) = $this->parts();
+		$this->current_user = 1;
+		$review             = $reviews->start( 'Q4' );
+		$reviews->decide( $review['id'], 5, 'keep', '', 'Needs it' );
+
+		$groups = array_column( $privacy->export( 'pat@example.com' )['data'], 'group_id' );
+		$this->assertContains( 'role-right-sizer-reviews', $groups );
+
+		$this->assertTrue( $privacy->erase( 'pat@example.com' )['items_removed'] );
+		$this->assertNotContains( 'role-right-sizer-reviews', array_column( $privacy->export( 'pat@example.com' )['data'], 'group_id' ) );
+	}
+
+	public function test_the_review_abilities_only_list_and_export(): void {
+		list( $abilities, , , , , $reviews ) = $this->parts();
+		$this->current_user = 1;
+		$review             = $reviews->start( 'Q4' );
+
+		$listed = $abilities->list_reviews( array( 'status' => 'open' ) );
+		$this->assertSame( 'Q4', $listed['reviews'][0]['name'] );
+		$this->assertSame( array(), $abilities->list_reviews( array( 'status' => 'finished' ) )['reviews'] );
+
+		$this->assertSame( 'csv', $abilities->export_review( array( 'review_id' => $review['id'] ) )['format'] );
+		$this->assertSame( 'html', $abilities->export_review( array( 'review_id' => $review['id'], 'format' => 'html' ) )['format'] );
+		$this->assertSame( 'role_right_sizer_review_not_found', $abilities->export_review( array( 'review_id' => 99 ) )->get_error_code() );
 	}
 }

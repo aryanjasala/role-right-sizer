@@ -184,3 +184,28 @@
 .rrs-table .check-column input[type="checkbox"] {
 	margin: 6px 4px;
 }
+
+/* Reviews tab */
+.rrs-decision {
+	border: 0;
+	margin: 0;
+	padding: 0;
+}
+
+.rrs-decision label {
+	display: inline-block;
+	margin: 0 12px 4px 0;
+}
+
+.rrs-review-filter {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.rrs-review-table .regular-text {
+	max-width: 100%;
+	min-width: 12em;
+	width: 100%;
+}

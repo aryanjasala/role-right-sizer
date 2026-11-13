@@ -16,7 +16,7 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 function role_right_sizer_uninstall_site(): void {
 	global $wpdb;
 
-	foreach ( array( 'role_right_sizer_settings', 'role_right_sizer_tracking_started', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials' ) as $role_right_sizer_option ) {
+	foreach ( array( 'role_right_sizer_settings', 'role_right_sizer_tracking_started', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials', 'role_right_sizer_reviews' ) as $role_right_sizer_option ) {
 		delete_option( $role_right_sizer_option );
 	}
 

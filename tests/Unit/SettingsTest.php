@@ -100,6 +100,7 @@ final class SettingsTest extends PluginTestCase {
 				'excluded_users' => array( 3 ),
 				'excluded_roles' => array( 'editor' ),
 				'trial_end_action' => 'ask',
+				'review_interval'  => 90,
 			),
 			$this->options[ Settings::OPTION ]
 		);

@@ -24,7 +24,7 @@
 
 ---
 
-Sites collect administrators who only ever write posts, old agency accounts nobody uses, and capabilities a plugin added years ago. Role editors let you change roles, but they don't tell you what to change. Role Right-Sizer records which capabilities each person actually uses, then recommends the smallest role that covers it. Nothing changes until you apply a recommendation, and every change can be undone. If you are not sure, try the smaller role for 14 days first: Right-Sizer records what the person could not do, and one click gives the old role back.
+Sites collect administrators who only ever write posts, old agency accounts nobody uses, and capabilities a plugin added years ago. Role editors let you change roles, but they don't tell you what to change. Role Right-Sizer records which capabilities each person actually uses, then recommends the smallest role that covers it. Nothing changes until you apply a recommendation, and every change can be undone. If you are not sure, try the smaller role for 14 days first: Right-Sizer records what the person could not do, and one click gives the old role back. Once a quarter, run an access review: decide keep, reduce or remove for every account and export the evidence for your auditor.
 
 > [!NOTE]
 > Free and open source under the GPL. No pro version, no upsells, no ads in wp-admin, no tracking. And it stays that way.
@@ -36,6 +36,7 @@ Sites collect administrators who only ever write posts, old agency accounts nobo
 - **Dormant accounts** (no activity for 90 days) and **never logged in since tracking began**, with no role or a fallback role
 - **Unused capabilities on roles**: plugin and custom capabilities no user of the role used, grouped by role and by the plugin they belong to. Never on the Administrator role, and only once a capability has been on its role for the whole window
 - **Trials**: give someone the smaller role for 14 days. Right-Sizer records every wall they hit, such as a screen they could not open or a page by another author they could not edit, grouped and counted. They see a message with a button to ask for their access back. Restore, extend or make permanent from the Trials tab
+- **Access reviews**: once a quarter, go through every account and choose Keep, Reduce or Remove access, with a note. Progress is saved, several reviewers can work on one review, and a due date sends reminders. Finishing applies the decisions through the change log, so Undo works, and gives you a CSV and a printable report for your auditor. Past reviews stay listed, and Site Health says when the next review is overdue
 - **Confirmation** that lists every capability a change takes away, and a **change log** with Undo for one change or a whole batch
 - **Safe by default**: a 30-day learning period, never more access than now, the last administrator and your own account are never changed, administrator capabilities are never suggested for removal, an active plugin's capabilities are marked and left out of `apply --all`, exclude lists for people and roles
 - **CSV download**, **WP-CLI**, **abilities** for AI agents, a **Site Health** check, and filters and actions for every default and change. Someone who may open the screen but not edit an account never sees that account's capabilities
@@ -75,6 +76,16 @@ wp role-right-sizer trial keep 3
 
 Recommendations change roles through core's own `set_role()`, so other plugins see every change.
 
+Run an access review and export the evidence:
+
+```sh
+wp role-right-sizer review start --name="Q4 review" --due=2026-12-15
+wp role-right-sizer review decide 1 sam reduce --role=editor --note="Only writes posts"
+wp role-right-sizer review keep-rest 1
+wp role-right-sizer review finish 1
+wp role-right-sizer review export 1 --format=html --file=review-1.html
+```
+
 ## Screenshots
 
 <table>
@@ -86,13 +97,17 @@ Recommendations change roles through core's own `set_role()`, so other plugins s
     <td width="50%" valign="top"><img src=".wordpress-org/screenshot-3.png" alt="The change log, with Undo for one change or the whole batch"><br><sub>The change log, with Undo for one change or the whole batch</sub></td>
     <td width="50%" valign="top"><img src=".wordpress-org/screenshot-4.png" alt="The learning period, with how long is left before recommendations show up"><br><sub>The learning period, with how long is left before recommendations show up</sub></td>
   </tr>
+  <tr>
+    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-5.png" alt="The Trials tab: days left, the roles before and during the trial, and every wall the person hit"><br><sub>The Trials tab: days left, the roles before and during the trial, and every wall the person hit</sub></td>
+    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-6.png" alt="An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change"><br><sub>An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change</sub></td>
+  </tr>
 </table>
 
 ## Documentation
 
 | Doc | What it covers |
 | --- | --- |
-| [Reference](docs/REFERENCE.md) | How usage is recorded, how recommendations are made, trials, hooks, abilities, WP-CLI and what is stored |
+| [Reference](docs/REFERENCE.md) | How usage is recorded, how recommendations are made, trials, access reviews, hooks, abilities, WP-CLI and what is stored |
 | [Development](docs/DEVELOPMENT.md) | Local setup, commands and tests |
 | [Contributing](docs/CONTRIBUTING.md) | Pull requests, required checks and PR titles |
 | [Releasing](docs/RELEASING.md) | How merged pull requests become releases |
@@ -117,13 +132,14 @@ src/
 ├── Applier.php             apply and undo, with the protections
 ├── Changes.php             the change log
 ├── Trials.php              trials: start, restore, extend, keep, denials, emails
+├── Reviews.php             access reviews: snapshot, decisions, finish, reminders, evidence
 ├── Access.php              who may see which account
 ├── Trial/Watcher.php       records what a person on trial could not do
 ├── Admin/                  Users > Right-Sizer and the network screen
 ├── Health/SiteHealth.php   the Site Health check
 ├── Privacy.php             exporter, eraser, policy text
 ├── Abilities.php           abilities for AI agents
-└── Cli/                    wp role-right-sizer and wp role-right-sizer trial
+└── Cli/                    wp role-right-sizer, trial and review
 assets/admin.css
 tests/
 ├── Unit/                   PHPUnit
@@ -147,14 +163,14 @@ Small plugins that each fill one gap in WordPress, all free with no pro version.
 | <img src="https://raw.githubusercontent.com/aryanjasala/agent-governance/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Agent Governance](https://github.com/aryanjasala/agent-governance) | Hold risky AI agent calls for approval, preview what they change, and roll back a session |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-ai-guard/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle AI Guard](https://github.com/aryanjasala/axle-ai-guard) | See and control every AI call your plugins make: cost, data sent, budgets and a kill switch |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-config-sync/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Config Sync](https://github.com/aryanjasala/axle-config-sync) | Keep settings in git, diff them against the live site, apply with a preview and undo |
-| <img src="https://raw.githubusercontent.com/aryanjasala/axle-leftovers/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Leftovers](https://github.com/aryanjasala/axle-leftovers) | Find what deleted plugins left behind, see who owns it and why, and clean it up with undo |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-leftovers/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Leftovers](https://github.com/aryanjasala/axle-leftovers) | Find what deleted plugins and themes left behind, see who owns it and why, and clean it up with undo |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-license-tracker/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle License Tracker](https://github.com/aryanjasala/axle-license-tracker) | See which premium plugins are licensed, which lapsed and stopped getting updates, and what renews when |
-| <img src="https://raw.githubusercontent.com/aryanjasala/axle-review/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Review](https://github.com/aryanjasala/axle-review) | Share drafts through private links and collect outside feedback as block Notes |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-review/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Review](https://github.com/aryanjasala/axle-review) | Share drafts through private links, collect outside feedback as block Notes, and know when an approval is out of date |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-runtime-doctor/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Runtime Doctor](https://github.com/aryanjasala/axle-runtime-doctor) | Check OPcache coverage, the object cache, PHP support and limits, cron and more, with the fix for your host |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-smoke-test/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Smoke Test](https://github.com/aryanjasala/axle-smoke-test) | Check key pages after every update or deploy, see what broke and roll it back |
-| <img src="https://raw.githubusercontent.com/aryanjasala/block-doctor/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Doctor](https://github.com/aryanjasala/block-doctor) | Scan the whole site for invalid and broken blocks and fix them in bulk, with undo |
-| <img src="https://raw.githubusercontent.com/aryanjasala/block-theme-ops/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Theme Ops](https://github.com/aryanjasala/block-theme-ops) | Find Site Editor changes that override your theme files, see the diff, reset them or send them to Git |
-| <img src="https://raw.githubusercontent.com/aryanjasala/update-rehearsal/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Update Rehearsal](https://github.com/aryanjasala/update-rehearsal) | Try plugin, theme, core and PHP updates on a disposable copy of your site in WordPress Playground first |
+| <img src="https://raw.githubusercontent.com/aryanjasala/block-doctor/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Doctor](https://github.com/aryanjasala/block-doctor) | Scan the site for broken blocks and fix them in bulk, with undo. See which posts use each block before you switch a plugin off |
+| <img src="https://raw.githubusercontent.com/aryanjasala/block-theme-ops/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Theme Ops](https://github.com/aryanjasala/block-theme-ops) | Find Site Editor changes that override your theme files, see the diff, reset them, send them to Git, move them to another site or lock them |
+| <img src="https://raw.githubusercontent.com/aryanjasala/update-rehearsal/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Update Rehearsal](https://github.com/aryanjasala/update-rehearsal) | Try plugin, theme, core and PHP updates, a new plugin, or life without one, on a disposable copy of your site in WordPress Playground first |
 | <img src="https://raw.githubusercontent.com/aryanjasala/user-session-manager/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [User Session Manager](https://github.com/aryanjasala/user-session-manager) | See every device signed in, sign out one, and limit sessions per role |
 
 ## License

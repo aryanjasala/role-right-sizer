@@ -11,7 +11,7 @@ const PEOPLE = [
 	[ 'nina', 'Nina Shah', 'editor' ],
 ];
 
-const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials' ];
+const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials', 'role_right_sizer_reviews' ];
 
 function clean() {
 	for ( const option of OPTIONS ) {
@@ -118,4 +118,19 @@ function endTrials() {
 	` );
 }
 
-module.exports = { seed, clean, trialWithDenials, endTrials };
+module.exports = { seed, clean, trialWithDenials, endTrials, reviewInProgress, reviewFinished };
+
+/** Starts a review of the team with a few decisions made. Run after seed(). */
+function reviewInProgress() {
+	wp( 'role-right-sizer', 'review', 'start', '--name=Q4 access review', '--due=' + new Date( Date.now() + 10 * 864e5 ).toISOString().slice( 0, 10 ) );
+	wp( 'role-right-sizer', 'review', 'decide', '1', 'pat', 'reduce', '--role=editor', '--note=Writes and edits posts only' );
+	wp( 'role-right-sizer', 'review', 'decide', '1', 'olive', 'remove', '--note=Left the team' );
+	wp( 'role-right-sizer', 'review', 'decide', '1', 'gus', 'keep' );
+}
+
+/** Finishes the review started by reviewInProgress(). */
+function reviewFinished() {
+	reviewInProgress();
+	wp( 'role-right-sizer', 'review', 'keep-rest', '1' );
+	wp( 'role-right-sizer', 'review', 'finish', '1', '--yes' );
+}

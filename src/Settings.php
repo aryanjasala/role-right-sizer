@@ -20,7 +20,7 @@ final class Settings {
 	/**
 	 * Settings with their defaults.
 	 *
-	 * @return array{dormant_action: string, fallback_role: string, excluded_users: int[], excluded_roles: string[], trial_end_action: string}
+	 * @return array{dormant_action: string, fallback_role: string, excluded_users: int[], excluded_roles: string[], trial_end_action: string, review_interval: int}
 	 */
 	public function all(): array {
 		$saved = get_option( self::OPTION, array() );
@@ -32,7 +32,22 @@ final class Settings {
 			'excluded_users'   => array_values( array_filter( array_map( 'absint', (array) ( $saved['excluded_users'] ?? array() ) ) ) ),
 			'excluded_roles'   => array_values( array_filter( array_map( 'sanitize_key', (array) ( $saved['excluded_roles'] ?? array() ) ) ) ),
 			'trial_end_action' => 'keep' === ( $saved['trial_end_action'] ?? '' ) ? 'keep' : 'ask',
+			'review_interval'  => self::clamp( $saved['review_interval'] ?? 90, 90, 0, 730 ),
 		);
+	}
+
+	/**
+	 * Days between access reviews. A reminder goes out, and Site Health says so, when one is overdue.
+	 *
+	 * @return int Days, 0 for no reminders.
+	 */
+	public function review_interval(): int {
+		/**
+		 * Filters how many days may pass between access reviews before a reminder.
+		 *
+		 * @param int $days Default 90, or what is saved in the settings. 0 turns the reminder off.
+		 */
+		return self::clamp( apply_filters( 'role_right_sizer_review_interval_days', $this->all()['review_interval'] ), 90, 0, 730 );
 	}
 
 	/**
@@ -56,7 +71,7 @@ final class Settings {
 	/**
 	 * Saves the settings from the screen or WP-CLI.
 	 *
-	 * @param array $values dormant_action, fallback_role, excluded_users, excluded_roles, trial_end_action.
+	 * @param array $values dormant_action, fallback_role, excluded_users, excluded_roles, trial_end_action, review_interval.
 	 */
 	public function save( array $values ): void {
 		$current = $this->all();
@@ -68,6 +83,7 @@ final class Settings {
 			'excluded_users'   => array_values( array_unique( array_filter( array_map( 'absint', (array) ( $values['excluded_users'] ?? $current['excluded_users'] ) ) ) ) ),
 			'excluded_roles'   => array_values( array_intersect( array_map( 'sanitize_key', (array) ( $values['excluded_roles'] ?? $current['excluded_roles'] ) ), $roles ) ),
 			'trial_end_action' => 'keep' === ( $values['trial_end_action'] ?? $current['trial_end_action'] ) ? 'keep' : 'ask',
+			'review_interval'  => self::clamp( $values['review_interval'] ?? $current['review_interval'], 90, 0, 730 ),
 		);
 
 		if ( ! in_array( $settings['fallback_role'], $roles, true ) ) {
