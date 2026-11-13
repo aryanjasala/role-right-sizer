@@ -453,6 +453,183 @@
           "call": "clean"
         }
       ]
+    },
+    {
+      "name": "Users > Right-Sizer Reviews tab, no review yet",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=reviews",
+      "steps": [
+        {
+          "waitFor": ".rrs-reviews-empty"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer review in progress",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "reviewInProgress"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=reviews&review=1",
+      "steps": [
+        {
+          "waitFor": ".rrs-review-table"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer review with the finish confirmation open",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "reviewInProgress"
+        },
+        {
+          "wp": [
+            "role-right-sizer",
+            "review",
+            "keep-rest",
+            "1"
+          ]
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=reviews&review=1",
+      "steps": [
+        {
+          "click": "summary >> text=Finish review"
+        },
+        {
+          "waitFor": ".rrs-finish .axle-confirm"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer finished review with results and Undo",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "reviewFinished"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=reviews&review=1",
+      "steps": [
+        {
+          "waitFor": ".rrs-review-table"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer reviews list with a finished review",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "reviewFinished"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=reviews",
+      "steps": [
+        {
+          "waitFor": ".rrs-reviews"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer error notice for a review that is not finished",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ]
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=reviews&rrs_errors=review_undecided",
+      "steps": [
+        {
+          "waitFor": ".notice-error"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
     }
   ],
   "skip": {}

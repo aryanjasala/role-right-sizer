@@ -22,6 +22,7 @@ Role Right-Sizer records which capabilities each person actually uses, then reco
 * **Unused capabilities on roles**: capabilities a role grants that none of its users used, usually left behind by a plugin. They are grouped by role and by the plugin they belong to, and you remove them from the role in one go.
 
 * **Trials**: not sure? Give someone the smaller role for 14 days. Role Right-Sizer records what they could not do, such as a screen they could not open or a page by another author they could not edit. They see a message with a button to ask for their access back. You restore the old role, extend the trial or make it permanent.
+* **Access reviews**: once a quarter, go through every account and choose Keep, Reduce or Remove access, with a note. Progress is saved, several reviewers can work on one review, and a due date sends reminders. Finishing applies the decisions through the change log, so Undo works, and gives you a CSV and a printable report to hand to your auditor.
 
 Nothing changes until you apply a recommendation or start a trial. You see every capability a change takes away before you confirm it, and every change goes into a log with an **Undo** button, for one change or a whole batch.
 
@@ -50,15 +51,15 @@ It is cheap enough for busy sites: everything is collected in memory and written
 = For developers and AI agents =
 
 * Filters for every default, limit and list, and actions for every change and undo. See the reference on GitHub.
-* WP-CLI: `wp role-right-sizer report`, `usage`, `apply`, `undo`, `changes`, `settings`, `forget` and `trial start|list|denials|restore|extend|keep`.
-* On WordPress 6.9 and later, abilities let AI agents read the recommendations and the change log, apply one, undo it, and run a trial, with the same protections.
+* WP-CLI: `wp role-right-sizer report`, `usage`, `apply`, `undo`, `changes`, `settings`, `forget`, `trial start|list|denials|restore|extend|keep` and `review start|list|show|decide|keep-rest|finish|discard|export`.
+* On WordPress 6.9 and later, abilities let AI agents read the recommendations and the change log, apply one, undo it, and run a trial, with the same protections. They can also list access reviews and export their evidence, but never decide one.
 * A CSV download of every user you may edit, with their role, recommended role, last activity and the capabilities they used. Someone who may open the screen but not edit an account never sees that account's capabilities, in the screen, the CSV, REST or an ability.
-* A Site Health check that says when accounts have more access than they use, or when a trial is over and waits for a decision. Leftover capabilities on roles are mentioned as housekeeping, not as a security issue.
+* A Site Health check that says when accounts have more access than they use, when a trial is over and waits for a decision, or when it is time for the next access review. Leftover capabilities on roles are mentioned as housekeeping, not as a security issue.
 * With Agent Governance active, an approver sees what a held change would do before approving it.
 
 = Privacy =
 
-The activity record is personal data: when someone was last active, which capabilities they used, and what they could not do during a trial. Trials are kept for a year after they end. It takes part in Tools > Export Personal Data and Erase Personal Data, Settings > Privacy gets suggested text, and uninstalling deletes all of it.
+The activity record is personal data: when someone was last active, which capabilities they used, what they could not do during a trial, and, in an access review, your role at the time and the decision about your account. Trials are kept for a year after they end. It takes part in Tools > Export Personal Data and Erase Personal Data, Settings > Privacy gets suggested text, and uninstalling deletes all of it.
 
 == Frequently Asked Questions ==
 
@@ -90,6 +91,18 @@ They get the smaller role right away and work as usual. Role Right-Sizer watches
 
 The person keeps the smaller role and the trial waits for you on the Trials tab. You can make it permanent, extend it or give the old role back. In Settings you can choose to make it permanent on its own when nobody was stopped. A trial where someone hit a wall is never closed on its own.
 
+= How does an access review work? =
+
+Open Users > Right-Sizer > Reviews and start a review. It takes a snapshot of every account you may edit and changes nothing. For each person choose Keep, Reduce to a role, or Remove access, and add a note if you like. Your choices are saved as you go, and other reviewers can work on the same review. When every account has a decision, finish the review: Right-Sizer shows what will change, applies it through the change log, and you can download the CSV or open the printable report. Undo puts the roles back, and the report says what was undone.
+
+= How often should I review? =
+
+Quarterly is common. Right-Sizer sends an email and Site Health says so when the last review is older than the interval in Settings, 90 days by default. Set it to 0 for no reminders.
+
+= Can an AI agent decide an access review? =
+
+No. Agents can list reviews and export their evidence. Starting, deciding and finishing a review are for people.
+
 = Can I undo a change much later? =
 
 Yes, as long as it is in the log, which keeps the last 500 changes. Undo puts back the exact roles or capability the change took away.
@@ -101,6 +114,7 @@ Yes, as long as it is in the log, which keeps the last 500 changes. Undo puts ba
 3. The change log, with Undo for one change or the whole batch.
 4. The learning period, with how long is left before recommendations show up.
 5. The Trials tab: days left, the roles before and during the trial, and every wall the person hit.
+6. An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change.
 
 == Changelog ==
 

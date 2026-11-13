@@ -13,6 +13,7 @@ use AryanX\Axle\RoleRightSizer\Admin\Screen;
 use AryanX\Axle\RoleRightSizer\Health\SiteHealth;
 use AryanX\Axle\RoleRightSizer\Recommender;
 use AryanX\Axle\RoleRightSizer\Report;
+use AryanX\Axle\RoleRightSizer\Reviews;
 use AryanX\Axle\RoleRightSizer\Settings;
 use AryanX\Axle\RoleRightSizer\Trials;
 use AryanX\Axle\RoleRightSizer\Applier;
@@ -35,7 +36,9 @@ final class ScreenTest extends PluginTestCase {
 		$report      = new Report( $settings, $recommender, $store );
 		$applier     = new Applier( $settings, $recommender, $report, new Changes() );
 
-		return new SiteHealth( $settings, $report, new Trials( $settings, $applier, $recommender, $report ) );
+		$trials = new Trials( $settings, $applier, $recommender, $report );
+
+		return new SiteHealth( $settings, $report, $trials, new Reviews( $settings, $applier, $report, $store, new Changes(), $trials ) );
 	}
 
 	public function test_the_capability_takes_a_filter_and_falls_back(): void {

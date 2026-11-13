@@ -2,7 +2,7 @@
 // Run on demand: npm run screenshots
 const { test, expect, wp } = require( './utils' );
 const { prepareSite, shot } = require( './utils/media' );
-const { seed, clean, trialWithDenials } = require( './seed' );
+const { seed, clean, trialWithDenials, reviewInProgress } = require( './seed' );
 
 const SCREEN = '/wp-admin/users.php?page=role-right-sizer';
 
@@ -64,5 +64,15 @@ test.describe.serial( 'Screenshots', () => {
 		await page.goto( `${ SCREEN }&tab=trials` );
 		await expect( page.locator( '.rrs-trials' ) ).toBeVisible();
 		await shot( page, 5 );
+	} );
+
+	test( '6: an access review', async ( { page } ) => {
+		seed();
+		wp( 'role-right-sizer', 'report' );
+		reviewInProgress();
+		await page.goto( `${ SCREEN }&tab=reviews&review=1` );
+		await expect( page.locator( '.rrs-review-table' ) ).toBeVisible();
+		await page.setViewportSize( { width: 1280, height: 1300 } );
+		await shot( page, 6 );
 	} );
 } );

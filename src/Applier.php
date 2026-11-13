@@ -138,6 +138,89 @@ final class Applier {
 	}
 
 	/**
+	 * Gives a user a smaller role, or none, chosen by a person (an access review).
+	 *
+	 * Unlike apply_user() this does not need a saved recommendation, but it
+	 * never gives more access than the user has now, and it keeps every
+	 * protection of check_user().
+	 *
+	 * @param int    $user_id User ID.
+	 * @param string $role    Role to give, '' to take every role away.
+	 * @param int    $batch   Batch to add the change to, 0 to start one.
+	 * @param string $kind    Kind to log the change as.
+	 * @return array|\WP_Error The change, or why it was refused.
+	 */
+	public function apply_role( int $user_id, string $role, int $batch = 0, string $kind = 'review' ) {
+		$plan = $this->plan_role( $user_id, $role );
+		if ( is_wp_error( $plan ) ) {
+			return $plan;
+		}
+
+		// The plan always holds the user it checked.
+		$user   = $plan['user'];
+		$change = array(
+			'batch'   => $batch,
+			'by'      => get_current_user_id(),
+			'kind'    => $kind,
+			'user_id' => $user->ID,
+			'login'   => $user->user_login,
+			'before'  => array_values( (array) $user->roles ),
+			'after'   => '' === $role ? array() : array( $role ),
+			'lost'    => $plan['lost'],
+		);
+
+		$this->before_apply( $change, $user );
+		$user->set_role( $role );
+
+		return $this->applied( $this->changes->add( $change ) );
+	}
+
+	/**
+	 * What giving a user a role would take away, or why it cannot be done. Changes nothing.
+	 *
+	 * @param int    $user_id User ID.
+	 * @param string $role    Role to give, '' for none.
+	 * @return array{user: \WP_User, lost: string[]}|\WP_Error
+	 */
+	public function plan_role( int $user_id, string $role ) {
+		$user = get_userdata( $user_id );
+		if ( ! $user instanceof \WP_User ) {
+			return new \WP_Error( 'role_right_sizer_not_found', __( 'That user does not exist.', 'role-right-sizer' ) );
+		}
+
+		$roles = Recommender::role_caps();
+		if ( '' !== $role && ! isset( $roles[ $role ] ) ) {
+			return new \WP_Error( 'role_right_sizer_role_unknown', __( 'That role does not exist.', 'role-right-sizer' ) );
+		}
+
+		$refused = $this->check_user( $user, $role );
+		if ( $refused ) {
+			return $refused;
+		}
+
+		$current = array_values( array_intersect( array_map( 'strval', (array) $user->roles ), array_keys( $roles ) ) );
+		$have    = array();
+		foreach ( $current as $name ) {
+			$have = array_merge( $have, $roles[ $name ] );
+		}
+		$have  = array_values( array_unique( $have ) );
+		$keeps = '' === $role ? array() : $roles[ $role ];
+		if ( array_diff( $keeps, $have ) ) {
+			return new \WP_Error( 'role_right_sizer_more_access', __( 'That role would give more access than the person has now.', 'role-right-sizer' ) );
+		}
+
+		$lost = Recommender::lost( $have, $keeps, $this->settings->ignored_capabilities() );
+		if ( ! $lost || ( 1 === count( $current ) && $current[0] === $role ) ) {
+			return new \WP_Error( 'role_right_sizer_nothing', __( 'There is nothing to change for this user.', 'role-right-sizer' ) );
+		}
+
+		return array(
+			'user' => $user,
+			'lost' => $lost,
+		);
+	}
+
+	/**
 	 * Removes a capability no user of a role used from that role.
 	 *
 	 * Only what the saved report recommends can be applied, and never on a

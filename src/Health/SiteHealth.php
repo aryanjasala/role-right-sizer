@@ -10,6 +10,7 @@ namespace AryanX\Axle\RoleRightSizer\Health;
 use AryanX\Axle\RoleRightSizer\Admin\AxleUi;
 use AryanX\Axle\RoleRightSizer\Admin\Screen;
 use AryanX\Axle\RoleRightSizer\Report;
+use AryanX\Axle\RoleRightSizer\Reviews;
 use AryanX\Axle\RoleRightSizer\Service;
 use AryanX\Axle\RoleRightSizer\Settings;
 use AryanX\Axle\RoleRightSizer\Trials;
@@ -44,13 +45,22 @@ final class SiteHealth implements Service {
 	private Trials $trials;
 
 	/**
+	 * Access reviews.
+	 *
+	 * @var Reviews
+	 */
+	private Reviews $reviews;
+
+	/**
 	 * Sets up the check.
 	 *
 	 * @param Settings $settings Settings and limits.
 	 * @param Report   $report   Saved recommendations.
 	 * @param Trials   $trials   Trials of a smaller role.
+	 * @param Reviews  $reviews  Access reviews.
 	 */
-	public function __construct( Settings $settings, Report $report, Trials $trials ) {
+	public function __construct( Settings $settings, Report $report, Trials $trials, Reviews $reviews ) {
+		$this->reviews  = $reviews;
 		$this->settings = $settings;
 		$this->report   = $report;
 		$this->trials   = $trials;
@@ -170,11 +180,65 @@ final class SiteHealth implements Service {
 			) . '</p>';
 		}
 
+		$result = $this->review_status( $result );
+
 		if ( $users || $roles ) {
-			$result['actions'] = sprintf( '<p><a href="%s">%s</a></p>', esc_url( Screen::url() ), esc_html__( 'See the recommendations', 'role-right-sizer' ) );
+			$result['actions'] .= sprintf( '<p><a href="%s">%s</a></p>', esc_url( Screen::url() ), esc_html__( 'See the recommendations', 'role-right-sizer' ) );
 		}
 
 		return $this->filtered( $result );
+	}
+
+	/**
+	 * Adds the access review to the result: overdue to start, or an open one past its date.
+	 *
+	 * @param array $result Site Health result so far.
+	 * @return array
+	 */
+	private function review_status( array $result ): array {
+		$open = $this->reviews->open();
+		if ( $open && Reviews::is_late( $open ) ) {
+			$label = __( 'The access review is past its due date', 'role-right-sizer' );
+			$text  = __( 'Accounts are waiting for a Keep, Reduce or Remove decision. Nothing changes until the review is finished.', 'role-right-sizer' );
+			$link  = Screen::url(
+				array(
+					'tab'    => 'reviews',
+					'review' => (int) $open['id'],
+				)
+			);
+		} elseif ( $this->reviews->is_overdue() ) {
+			$last  = $this->reviews->last_finished();
+			$label = $last ? __( 'It is time for the next access review', 'role-right-sizer' ) : __( 'This site has not had an access review yet', 'role-right-sizer' );
+			$text  = $last
+				/* translators: %s: when, e.g. "3 months ago". */
+				? sprintf( esc_html__( 'The last review was finished %s. Going through every account again shows who still needs their access.', 'role-right-sizer' ), AxleUi::relative_time( $last ) )
+				: esc_html__( 'A review goes through every account and records who keeps, loses or reduces access. It is the evidence auditors ask for.', 'role-right-sizer' );
+			$link = Screen::url( array( 'tab' => 'reviews' ) );
+		} else {
+			return $result;
+		}
+
+		if ( 'good' === $result['status'] ) {
+			$result['status']         = 'recommended';
+			$result['badge']['color'] = 'orange';
+			$result['label']          = $label;
+			$result['description']    = '<p>' . wp_kses(
+				$text,
+				array(
+					'time' => array(
+						'class'    => true,
+						'datetime' => true,
+						'title'    => true,
+					),
+					'span' => array( 'class' => true ),
+				) 
+			) . '</p>';
+		} else {
+			$result['description'] .= '<p>' . esc_html( $label ) . '.</p>';
+		}
+		$result['actions'] .= sprintf( '<p><a href="%s">%s</a></p>', esc_url( $link ), esc_html__( 'Open the reviews', 'role-right-sizer' ) );
+
+		return $result;
 	}
 
 	/**
