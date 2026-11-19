@@ -9,6 +9,7 @@ namespace AryanX\Axle\RoleRightSizer\Usage;
 
 use AryanX\Axle\RoleRightSizer\Service;
 use AryanX\Axle\RoleRightSizer\Settings;
+use AryanX\Axle\RoleRightSizer\Temporary;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -250,7 +251,21 @@ final class Recorder implements Service {
 		}
 
 		foreach ( $this->pending as $user_id => $caps ) {
-			$this->store->add_usage( $user_id, array_keys( $caps ), $now, $interval );
+			$names    = array_keys( $caps );
+			$elevated = array();
+			$user     = Temporary::is_elevated( (int) $user_id ) ? get_userdata( (int) $user_id ) : false;
+			if ( $user instanceof \WP_User ) {
+				// Access lent for a time is tagged apart: it must not make the person's own role look too small.
+				$permanent = Temporary::permanent_caps( $user );
+				$elevated  = array_values( array_diff( $names, $permanent ) );
+				$names     = array_values( array_intersect( $names, $permanent ) );
+			}
+			if ( $names ) {
+				$this->store->add_usage( $user_id, $names, $now, $interval );
+			}
+			if ( $elevated ) {
+				$this->store->add_elevated_usage( $user_id, $elevated, $now, $interval );
+			}
 		}
 
 		foreach ( $this->abilities as $user_id => $names ) {

@@ -132,16 +132,17 @@ final class Privacy implements Service {
 
 			foreach ( array(
 				'usage'     => $this->store->usage( $user->ID ),
+				'elevated'  => $this->store->elevated_usage( $user->ID ),
 				'abilities' => $this->store->abilities( $user->ID ),
 			) as $group => $record ) {
 				foreach ( $record as $name => $times ) {
 					$data[] = array(
 						'group_id'    => 'role-right-sizer-' . $group,
-						'group_label' => 'usage' === $group ? __( 'Capabilities used', 'role-right-sizer' ) : __( 'Abilities run', 'role-right-sizer' ),
+						'group_label' => self::group_label( $group ),
 						'item_id'     => 'role-right-sizer-' . $group . '-' . sanitize_key( $name ),
 						'data'        => array(
 							array(
-								'name'  => 'usage' === $group ? __( 'Capability', 'role-right-sizer' ) : __( 'Ability', 'role-right-sizer' ),
+								'name'  => 'abilities' === $group ? __( 'Ability', 'role-right-sizer' ) : __( 'Capability', 'role-right-sizer' ),
 								'value' => $name,
 							),
 							array(
@@ -174,7 +175,9 @@ final class Privacy implements Service {
 							'name'  => __( 'Change', 'role-right-sizer' ),
 							'value' => 'unused_cap' === $change['kind']
 								? $change['role'] . ': -' . $change['cap']
-								: implode( ', ', (array) $change['before'] ) . ' > ' . implode( ', ', (array) $change['after'] ),
+								: ( 'fix_cap' === $change['kind']
+									? '+' . $change['cap']
+									: implode( ', ', (array) $change['before'] ) . ' > ' . implode( ', ', (array) $change['after'] ) ),
 						),
 					),
 				);
@@ -309,6 +312,20 @@ final class Privacy implements Service {
 			__( 'Role Right-Sizer', 'role-right-sizer' ),
 			'<p>' . esc_html__( 'When you are logged in, this site records which permissions your account used (such as publishing posts or managing plugins), when you last logged in and when you were last active. Each permission is stored with the first and last time it was used. Administrators use this to give every account only the access it needs. The record is kept for as long as the account exists, and changes to your role are kept in a log so they can be undone. If your role is reduced as a trial, the site also records what you could not do during the trial, such as opening a screen you no longer have access to, and keeps that record for a year after the trial ends. If an administrator runs an access review, the site keeps a snapshot of your role, what you used and the decision about your account, with any note, as evidence for audits.', 'role-right-sizer' ) . '</p>'
 		);
+	}
+
+	/**
+	 * The heading of an exported group.
+	 *
+	 * @param string $group `usage`, `elevated` or `abilities`.
+	 * @return string
+	 */
+	private static function group_label( string $group ): string {
+		if ( 'elevated' === $group ) {
+			return __( 'Capabilities used through temporary access', 'role-right-sizer' );
+		}
+
+		return 'usage' === $group ? __( 'Capabilities used', 'role-right-sizer' ) : __( 'Abilities run', 'role-right-sizer' );
 	}
 
 	/**

@@ -889,13 +889,15 @@ final class Reviews implements Service {
 	h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
 	dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; }
 	dt { font-weight: 600; }
-	dd { margin: 0; }
-	table { border-collapse: collapse; width: 100%; }
+	dd { margin: 0; overflow-wrap: anywhere; }
+	.scroll { overflow-x: auto; }
+	table { border-collapse: collapse; width: 100%; min-width: 46rem; }
 	th, td { border: 1px solid #8c8f94; padding: .35rem .5rem; text-align: left; vertical-align: top; }
 	th { background: #f0f0f1; }
 	.note { color: #50575e; }
 	.hint { background: #f0f6fc; border: 1px solid #72aee6; padding: .5rem .75rem; margin: 1rem 0; }
-	@media print { .hint { display: none; } body { max-width: none; padding: 0; } tr { page-break-inside: avoid; } }
+	@media (max-width: 40rem) { dl { grid-template-columns: 1fr; } dt { margin-top: .5rem; } }
+	@media print { .hint { display: none; } body { max-width: none; padding: 0; } .scroll { overflow: visible; } table { min-width: 0; } tr { page-break-inside: avoid; } }
 </style>
 </head>
 <body>
@@ -965,7 +967,8 @@ final class Reviews implements Service {
 </p>
 		<?php endif; ?>
 
-<h2><?php esc_html_e( 'Decisions', 'role-right-sizer' ); ?></h2>
+<h2 id="decisions"><?php esc_html_e( 'Decisions', 'role-right-sizer' ); ?></h2>
+<div class="scroll" tabindex="0" role="region" aria-labelledby="decisions">
 <table>
 	<thead>
 		<tr>
@@ -1001,6 +1004,7 @@ final class Reviews implements Service {
 		<?php endforeach; ?>
 	</tbody>
 </table>
+</div>
 <p class="note">
 		<?php
 		echo esc_html(
@@ -1216,6 +1220,10 @@ final class Reviews implements Service {
 			}
 			if ( '' === $role || ! isset( Recommender::role_caps()[ $role ] ) ) {
 				return new \WP_Error( 'role_right_sizer_review_role', __( 'Choose the role to reduce to.', 'role-right-sizer' ) );
+			}
+			$person = get_userdata( $user_id );
+			if ( $person instanceof \WP_User && ! in_array( $role, Applier::smaller_roles( $person ), true ) ) {
+				return new \WP_Error( 'role_right_sizer_more_access', __( 'That role would give more access than the person has now.', 'role-right-sizer' ) );
 			}
 		} else {
 			$role = '';

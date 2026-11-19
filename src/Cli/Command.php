@@ -321,6 +321,8 @@ final class Command {
 		foreach ( $result['changes'] as $change ) {
 			if ( 'unused_cap' === $change['kind'] ) {
 				\WP_CLI::line( sprintf( 'Change %d: removed %s from %s.', $change['id'], $change['cap'], $change['role'] ) );
+			} elseif ( 'fix_cap' === $change['kind'] ) {
+				\WP_CLI::line( sprintf( 'Change %d: gave %s the %s capability.', $change['id'], $change['login'], $change['cap'] ) );
 			} else {
 				\WP_CLI::line( sprintf( 'Change %d: %s, %s -> %s.', $change['id'], $change['login'], implode( ', ', $change['before'] ), $change['after'] ? implode( ', ', $change['after'] ) : 'no role' ) );
 			}
@@ -399,7 +401,7 @@ final class Command {
 				'kind'   => $change['kind'],
 				'target' => 'unused_cap' === $change['kind'] ? $change['role'] : $change['login'],
 				'before' => 'unused_cap' === $change['kind'] ? $change['cap'] : implode( ', ', (array) $change['before'] ),
-				'after'  => 'unused_cap' === $change['kind'] ? '' : implode( ', ', (array) $change['after'] ),
+				'after'  => 'unused_cap' === $change['kind'] ? '' : ( 'fix_cap' === $change['kind'] ? '+' . $change['cap'] : implode( ', ', (array) $change['after'] ) ),
 				'undone' => $change['undone'] ? gmdate( 'Y-m-d H:i:s', (int) $change['undone'] ) : '',
 			);
 		}

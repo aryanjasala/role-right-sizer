@@ -209,3 +209,52 @@
 	min-width: 12em;
 	width: 100%;
 }
+
+/* Why can't they? */
+.rrs-presets {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 8px;
+}
+
+.rrs-page .form-table input.regular-text,
+.rrs-page .form-table textarea {
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.rrs-check-says {
+	font-size: 14px;
+}
+
+.rrs-check-fixes {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rrs-check-fixes li {
+	margin: 0 0 8px;
+}
+
+.rrs-check-fixes .rrs-inline-form {
+	display: block;
+}
+
+.rrs-lent {
+	margin-top: 6px;
+}
+
+.rrs-lent .description {
+	margin: 4px 0;
+}
+
+/* Long dates in the review stats wrap instead of widening the page on a phone. */
+.rrs-page .axle-stat {
+	min-width: 0;
+}
+
+.rrs-page .axle-stat__value {
+	overflow-wrap: anywhere;
+}

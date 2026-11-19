@@ -39,6 +39,8 @@ Sites collect administrators who only ever write posts, old agency accounts nobo
 - **Access reviews**: once a quarter, go through every account and choose Keep, Reduce or Remove access, with a note. Progress is saved, several reviewers can work on one review, and a due date sends reminders. Finishing applies the decisions through the change log, so Undo works, and gives you a CSV and a printable report for your auditor. Past reviews stay listed, and Site Health says when the next review is overdue
 - **Confirmation** that lists every capability a change takes away, and a **change log** with Undo for one change or a whole batch
 - **Safe by default**: a 30-day learning period, never more access than now, the last administrator and your own account are never changed, administrator capabilities are never suggested for removal, an active plugin's capabilities are marked and left out of `apply --all`, exclude lists for people and roles
+- **Why can't they?**: "Check what Pat can do" tries an admin screen or a REST route as Pat, without signing in as them and without saving anything, and names the capability that stopped it, the roles that have it and the smallest fix: one capability, or one more role, behind a confirmation and with Undo
+- **Lent access is not counted**: a role Axle Elevate lent for an hour is not an administrator for the last-administrator guard, and what the person did with it never makes their normal role look too small
 - **CSV download**, **WP-CLI**, **abilities** for AI agents, a **Site Health** check, and filters and actions for every default and change. Someone who may open the screen but not edit an account never sees that account's capabilities
 
 ## Install
@@ -99,7 +101,10 @@ wp role-right-sizer review export 1 --format=html --file=review-1.html
   </tr>
   <tr>
     <td width="50%" valign="top"><img src=".wordpress-org/screenshot-5.png" alt="The Trials tab: days left, the roles before and during the trial, and every wall the person hit"><br><sub>The Trials tab: days left, the roles before and during the trial, and every wall the person hit</sub></td>
-    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-6.png" alt="An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change"><br><sub>An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change</sub></td>
+    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-6.png" alt="An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change. Reduce to lists only smaller roles the person already covers"><br><sub>An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change. Reduce to lists only smaller roles the person already covers</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-7.png" alt="Why can't they? Trying an upload as a subscriber: the capability that refused it, the roles that have it, and the smallest fix behind a confirmation"><br><sub>Why can't they? Trying an upload as a subscriber: the capability that refused it, the roles that have it, and the smallest fix behind a confirmation</sub></td>
   </tr>
 </table>
 
@@ -133,6 +138,8 @@ src/
 ├── Changes.php             the change log
 ├── Trials.php              trials: start, restore, extend, keep, denials, emails
 ├── Reviews.php             access reviews: snapshot, decisions, finish, reminders, evidence
+├── Temporary.php           access lent for a time (Axle Elevate): not an administrator, kept apart
+├── Probe/                  Why can't they?: the check, and the cookie side
 ├── Access.php              who may see which account
 ├── Trial/Watcher.php       records what a person on trial could not do
 ├── Admin/                  Users > Right-Sizer and the network screen

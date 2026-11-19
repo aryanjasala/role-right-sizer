@@ -8,6 +8,7 @@
 namespace AryanX\Axle\RoleRightSizer\Admin;
 
 use AryanX\Axle\RoleRightSizer\Access;
+use AryanX\Axle\RoleRightSizer\Applier;
 use AryanX\Axle\RoleRightSizer\Changes;
 use AryanX\Axle\RoleRightSizer\Reviews;
 
@@ -524,7 +525,10 @@ final class ReviewsTab {
 							$can     = Access::can_manage_user( $uid ) && $me !== $uid;
 							$name    = "decisions[{$uid}]";
 							$prefix  = 'rrs-r' . $uid;
+							$person  = $can ? get_userdata( $uid ) : false;
+							$smaller = $person instanceof \WP_User ? Applier::smaller_roles( $person ) : array();
 							$default = '' !== $entry['role'] ? $entry['role'] : ( is_string( $entry['proposed'] ) ? $entry['proposed'] : '' );
+							$default = in_array( $default, $smaller, true ) ? $default : '';
 							?>
 							<tr data-user="<?php echo esc_attr( (string) $entry['login'] ); ?>">
 								<td class="column-primary">
@@ -553,13 +557,16 @@ final class ReviewsTab {
 											</legend>
 											<label><input type="radio" name="<?php echo esc_attr( $name ); ?>[decision]" value="keep" <?php checked( 'keep', $entry['decision'] ); ?>> <?php esc_html_e( 'Keep', 'role-right-sizer' ); ?></label>
 											<?php if ( $can ) : ?>
-												<label><input type="radio" name="<?php echo esc_attr( $name ); ?>[decision]" value="reduce" <?php checked( 'reduce', $entry['decision'] ); ?>> <?php esc_html_e( 'Reduce to', 'role-right-sizer' ); ?></label>
-												<label class="screen-reader-text" for="<?php echo esc_attr( $prefix ); ?>-role"><?php esc_html_e( 'Role to reduce to', 'role-right-sizer' ); ?></label>
-												<select id="<?php echo esc_attr( $prefix ); ?>-role" name="<?php echo esc_attr( $name ); ?>[role]">
-													<?php foreach ( $roles as $role_name => $role ) : ?>
-														<option value="<?php echo esc_attr( (string) $role_name ); ?>" <?php selected( $default, $role_name ); ?>><?php echo esc_html( translate_user_role( (string) $role['name'] ) ); ?></option>
-													<?php endforeach; ?>
-												</select>
+												<?php if ( $smaller ) : ?>
+													<label><input type="radio" name="<?php echo esc_attr( $name ); ?>[decision]" value="reduce" <?php checked( 'reduce', $entry['decision'] ); ?>> <?php esc_html_e( 'Reduce to', 'role-right-sizer' ); ?></label>
+													<label class="screen-reader-text" for="<?php echo esc_attr( $prefix ); ?>-role"><?php esc_html_e( 'Role to reduce to', 'role-right-sizer' ); ?></label>
+													<select id="<?php echo esc_attr( $prefix ); ?>-role" name="<?php echo esc_attr( $name ); ?>[role]">
+														<option value="" <?php selected( $default, '' ); ?>><?php esc_html_e( 'Choose a role', 'role-right-sizer' ); ?></option>
+														<?php foreach ( $smaller as $role_name ) : ?>
+															<option value="<?php echo esc_attr( $role_name ); ?>" <?php selected( $default, $role_name ); ?>><?php echo esc_html( translate_user_role( (string) ( $roles[ $role_name ]['name'] ?? $role_name ) ) ); ?></option>
+														<?php endforeach; ?>
+													</select>
+												<?php endif; ?>
 												<label><input type="radio" name="<?php echo esc_attr( $name ); ?>[decision]" value="remove" <?php checked( 'remove', $entry['decision'] ); ?>> <?php esc_html_e( 'Remove access', 'role-right-sizer' ); ?></label>
 											<?php else : ?>
 												<span class="axle-muted"><?php echo esc_html( $me === $uid ? __( 'You cannot change your own role here.', 'role-right-sizer' ) : __( 'You may not change this account.', 'role-right-sizer' ) ); ?></span>

@@ -99,6 +99,13 @@ final class TrialWatcherTest extends PluginTestCase {
 		Functions\when( 'human_time_diff' )->justReturn( '3 days' );
 		Functions\when( 'wp_date' )->justReturn( '3 Nov 2026' );
 		Functions\when( 'wp_kses' )->returnArg();
+		Functions\when( 'wp_parse_args' )->alias(
+			static function ( $args, $defaults = array() ) {
+				return array_merge( (array) $defaults, (array) $args );
+			}
+		);
+		Functions\when( 'esc_url_raw' )->returnArg();
+		Functions\when( 'wp_get_referer' )->justReturn( 'https://example.com/wp-admin/plugins.php' );
 		Functions\when( 'translate_user_role' )->returnArg();
 		Functions\when( 'number_format_i18n' )->alias( 'strval' );
 		Functions\when( 'wp_specialchars_decode' )->returnArg();
@@ -232,6 +239,39 @@ final class TrialWatcherTest extends PluginTestCase {
 		$this->assertSame( 'Could not create categories through the REST API', $denials['rest:create:categories']['label'] );
 		$this->assertSame( 'rest', $denials['rest:create:categories']['kind'] );
 		$this->assertStringContainsString( 'Ask for it back', $returned->get_data()['role_right_sizer_trial'] );
+	}
+
+	public function test_a_refused_rest_write_carries_the_wall_the_editor_turns_into_a_notice(): void {
+		$watcher = $this->watcher();
+		$this->refuse( $watcher, 'upload_files', 'upload_files' );
+
+		$returned = $watcher->rest_response( new TrialTestResponse( array( 'code' => 'rest_cannot_create', 'data' => array( 'status' => 403 ) ), 403 ), null, new TrialTestRequest( 'POST', '/wp/v2/media' ) );
+
+		$wall = $returned->get_data()['data']['axle_wall'];
+		$this->assertSame( 'role-right-sizer', $wall['plugin'] );
+		$this->assertSame( 'upload_files', $wall['capability'] );
+		$this->assertSame( 'Request my access back', $wall['action_label'] );
+		$this->assertSame( 'role-right-sizer/v1/trial/request-access', $wall['request_route'] );
+		$this->assertStringContainsString( 'Ask for it back', $wall['message'] );
+		$this->assertSame( 403, $returned->get_data()['data']['status'], 'The status stays.' );
+	}
+
+	public function test_once_asked_the_wall_offers_no_button(): void {
+		$this->trials->request_access( $this->trial['id'], true );
+
+		$wall = $this->watcher()->wall_data( 'upload_files' );
+
+		$this->assertSame( '', $wall['request_route'] );
+		$this->assertSame( '', $wall['action_label'] );
+		$this->assertStringContainsString( 'You already asked', $wall['message'] );
+	}
+
+	public function test_the_die_page_says_when_the_trial_ends_and_has_a_way_back(): void {
+		$html = $this->watcher()->wall_html();
+
+		$this->assertStringContainsString( 'Your trial ends on 3 Nov 2026.', $html );
+		$this->assertStringContainsString( 'name="rrs_return" value="https://example.com/wp-admin/plugins.php"', $html );
+		$this->assertStringContainsString( '>Back</a>', $html );
 	}
 
 	public function test_reads_and_nonce_errors_in_rest_are_not_walls(): void {

@@ -24,6 +24,8 @@ Role Right-Sizer records which capabilities each person actually uses, then reco
 * **Trials**: not sure? Give someone the smaller role for 14 days. Role Right-Sizer records what they could not do, such as a screen they could not open or a page by another author they could not edit. They see a message with a button to ask for their access back. You restore the old role, extend the trial or make it permanent.
 * **Access reviews**: once a quarter, go through every account and choose Keep, Reduce or Remove access, with a note. Progress is saved, several reviewers can work on one review, and a due date sends reminders. Finishing applies the decisions through the change log, so Undo works, and gives you a CSV and a printable report to hand to your auditor.
 
+* **Why can't they?**: an editor writes "I can't upload images". Choose "Check what Pat can do" on Users or on their profile. Role Right-Sizer tries a screen or a REST route as Pat for a moment, without signing in as them and without saving anything, and tells you which capability stopped it, which roles have it and the smallest fix. You can give that one capability, or one more role, behind a confirmation, and Undo takes it away.
+
 Nothing changes until you apply a recommendation or start a trial. You see every capability a change takes away before you confirm it, and every change goes into a log with an **Undo** button, for one change or a whole batch.
 
 Free and open source under the GPL. No pro version, no upsells, no ads in wp-admin, no tracking. And it stays that way.
@@ -47,12 +49,15 @@ It is cheap enough for busy sites: everything is collected in memory and written
 * A capability only counts as unused once it has been on the role for the whole window. One a plugin added last week is not "unused" yet.
 * Capabilities that belong to an active plugin are marked as such, and `wp role-right-sizer apply --all` leaves them alone unless you add `--include-plugin-caps`.
 * Changes go through core's own role functions, so other plugins see them.
+* "Reduce to" in an access review lists only roles that give fewer capabilities, all of them ones the person already has.
+* A role that Axle Elevate lends for an hour does not count as an administrator, and what the person does with it never makes their normal role look too small.
+* "Why can't they?" only works for people you may edit, only on this site's admin screens and REST routes, never signs in as the person, and stops a REST write after its permission check so nothing is saved. A fix only gives what you could give yourself.
 
 = For developers and AI agents =
 
 * Filters for every default, limit and list, and actions for every change and undo. See the reference on GitHub.
-* WP-CLI: `wp role-right-sizer report`, `usage`, `apply`, `undo`, `changes`, `settings`, `forget`, `trial start|list|denials|restore|extend|keep` and `review start|list|show|decide|keep-rest|finish|discard|export`.
-* On WordPress 6.9 and later, abilities let AI agents read the recommendations and the change log, apply one, undo it, and run a trial, with the same protections. They can also list access reviews and export their evidence, but never decide one.
+* WP-CLI: `wp role-right-sizer report`, `usage`, `apply`, `undo`, `changes`, `settings`, `forget`, `trial start|list|denials|restore|extend|keep` and `review start|list|show|decide|keep-rest|finish|discard|export` and `access check|fix`.
+* On WordPress 6.9 and later, abilities let AI agents read the recommendations and the change log, apply one, undo it, run a trial, and check why a person cannot do something, with the same protections. They can also list access reviews and export their evidence, but never decide one.
 * A CSV download of every user you may edit, with their role, recommended role, last activity and the capabilities they used. Someone who may open the screen but not edit an account never sees that account's capabilities, in the screen, the CSV, REST or an ability.
 * A Site Health check that says when accounts have more access than they use, when a trial is over and waits for a decision, or when it is time for the next access review. Leftover capabilities on roles are mentioned as housekeeping, not as a security issue.
 * With Agent Governance active, an approver sees what a held change would do before approving it.
@@ -99,6 +104,14 @@ Open Users > Right-Sizer > Reviews and start a review. It takes a snapshot of ev
 
 Quarterly is common. Right-Sizer sends an email and Site Health says so when the last review is older than the interval in Settings, 90 days by default. Set it to 0 for no reminders.
 
+= How can Right-Sizer try something as another person without signing in as them? =
+
+For one request it makes a login cookie for that person, sends the request to your own site, and ends the cookie's session right afterwards. A second signed cookie works once and only for that person. A REST route is answered right after its permission check, so nothing is created, changed or deleted, and you never see the page itself, only whether it was allowed. It needs the right to edit that person, and it will not load files such as admin-ajax.php that act on a plain request. Your server has to be able to reach your own address, and Site Health shows whether it can.
+
+= Can I give someone more access from the check? =
+
+Yes, but only what you could give yourself: a capability you hold, or a role whose capabilities you all hold. Never your own account, never someone on the exclude list or on a role trial. Each fix asks first and goes in the change log, where Undo takes it away.
+
 = Can an AI agent decide an access review? =
 
 No. Agents can list reviews and export their evidence. Starting, deciding and finishing a review are for people.
@@ -114,7 +127,8 @@ Yes, as long as it is in the log, which keeps the last 500 changes. Undo puts ba
 3. The change log, with Undo for one change or the whole batch.
 4. The learning period, with how long is left before recommendations show up.
 5. The Trials tab: days left, the roles before and during the trial, and every wall the person hit.
-6. An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change.
+6. An access review: Keep, Reduce or Remove access for each person, with notes, and the finish step that lists what will change. Reduce to lists only smaller roles the person already covers.
+7. Why can't they? Trying an upload as a subscriber: the capability that refused it, the roles that have it, and the smallest fix behind a confirmation.
 
 == Changelog ==
 

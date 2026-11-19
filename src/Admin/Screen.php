@@ -88,6 +88,13 @@ final class Screen implements Service {
 	private Reviews $reviews;
 
 	/**
+	 * The "Why can't they?" view.
+	 *
+	 * @var CheckScreen
+	 */
+	private CheckScreen $check;
+
+	/**
 	 * Sets up the screen.
 	 *
 	 * @param Settings    $settings    Settings and limits.
@@ -98,8 +105,10 @@ final class Screen implements Service {
 	 * @param Applier     $applier     Applies and undoes changes.
 	 * @param Trials      $trials      Trials of a smaller role.
 	 * @param Reviews     $reviews     Access reviews.
+	 * @param CheckScreen $check       The "Why can't they?" view.
 	 */
-	public function __construct( Settings $settings, Store $store, Recommender $recommender, Report $report, Changes $changes, Applier $applier, Trials $trials, Reviews $reviews ) {
+	public function __construct( Settings $settings, Store $store, Recommender $recommender, Report $report, Changes $changes, Applier $applier, Trials $trials, Reviews $reviews, CheckScreen $check ) {
+		$this->check       = $check;
 		$this->trials      = $trials;
 		$this->reviews     = $reviews;
 		$this->settings    = $settings;
@@ -355,7 +364,12 @@ final class Screen implements Service {
 			'changes'         => __( 'Every change you applied, newest first. Undo puts the earlier roles and capabilities back.', 'role-right-sizer' ),
 			'settings'        => __( 'Choose what Role Right-Sizer recommends for dormant accounts, which roles and people it never touches, and what happens when a trial ends.', 'role-right-sizer' ),
 		);
-		$intro  = 'confirm' === $view ? __( 'Check every change before it is applied. Each one goes into the log, where one click undoes it.', 'role-right-sizer' ) : $intros[ $tab ];
+		$intro  = $intros[ $tab ];
+		if ( 'confirm' === $view ) {
+			$intro = __( 'Check every change before it is applied. Each one goes into the log, where one click undoes it.', 'role-right-sizer' );
+		} elseif ( 'check' === $view ) {
+			$intro = __( 'Find out what stops a person from doing something, and give them just enough access to do it.', 'role-right-sizer' );
+		}
 		?>
 		<div class="wrap axle-ui rrs-page">
 			<h1 class="wp-heading-inline"><?php esc_html_e( 'Role Right-Sizer', 'role-right-sizer' ); ?></h1>
@@ -375,7 +389,7 @@ final class Screen implements Service {
 
 			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'Role Right-Sizer sections', 'role-right-sizer' ); ?>">
 				<?php foreach ( $tabs as $key => $label ) : ?>
-					<a href="<?php echo esc_url( self::url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key ? ' nav-tab-active' : ''; ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>>
+					<a href="<?php echo esc_url( self::url( array( 'tab' => $key ) ) ); ?>" class="nav-tab<?php echo $tab === $key && 'check' !== $view ? ' nav-tab-active' : ''; ?>"<?php echo $tab === $key && 'check' !== $view ? ' aria-current="page"' : ''; ?>>
 						<?php
 						echo esc_html( $label );
 						if ( 'trials' === $key && $open ) {
@@ -391,6 +405,8 @@ final class Screen implements Service {
 			<?php
 			if ( 'confirm' === $view ) {
 				$this->render_confirm();
+			} elseif ( 'check' === $view ) {
+				$this->check->render();
 			} elseif ( 'trials' === $tab ) {
 				( new TrialsTab( $this->trials ) )->render();
 			} elseif ( 'reviews' === $tab ) {
@@ -819,7 +835,7 @@ final class Screen implements Service {
 							</td>
 							<td><?php $this->render_caps( (array) $recommendation['lost'] ); ?></td>
 							<?php if ( 'downgrade' === $type ) : ?>
-								<td><?php $this->render_used( (array) $recommendation['used'] ); ?></td>
+								<td><?php $this->render_used( (array) $recommendation['used'], (int) $user->ID ); ?></td>
 							<?php endif; ?>
 							<td><?php self::print_time( max( (int) $recommendation['last_active'], (int) $recommendation['last_login'] ) ); ?></td>
 						</tr>
@@ -1199,7 +1215,7 @@ final class Screen implements Service {
 				<tr>
 					<th scope="col"><?php esc_html_e( 'When', 'role-right-sizer' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Change', 'role-right-sizer' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Capabilities taken away', 'role-right-sizer' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Capabilities taken away or given', 'role-right-sizer' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Undo', 'role-right-sizer' ); ?></th>
 				</tr>
 			</thead>
@@ -1232,12 +1248,16 @@ final class Screen implements Service {
 								<?php $user = get_userdata( (int) $change['user_id'] ); ?>
 								<strong><?php echo esc_html( $user ? $user->display_name : (string) $change['login'] ); ?></strong>
 								<div class="axle-diff rrs-change">
-									<del><span class="screen-reader-text"><?php esc_html_e( 'Before:', 'role-right-sizer' ); ?></span> <?php echo esc_html( self::roles_label( (array) $change['before'] ) ); ?></del>
-									<ins><span class="screen-reader-text"><?php esc_html_e( 'After:', 'role-right-sizer' ); ?></span> <?php echo esc_html( self::roles_label( (array) $change['after'] ) ); ?></ins>
+									<?php if ( 'fix_cap' === $change['kind'] ) : ?>
+										<ins><span class="screen-reader-text"><?php esc_html_e( 'Added:', 'role-right-sizer' ); ?></span> <?php echo esc_html( (string) $change['cap'] ); ?></ins>
+									<?php else : ?>
+										<del><span class="screen-reader-text"><?php esc_html_e( 'Before:', 'role-right-sizer' ); ?></span> <?php echo esc_html( self::roles_label( (array) $change['before'] ) ); ?></del>
+										<ins><span class="screen-reader-text"><?php esc_html_e( 'After:', 'role-right-sizer' ); ?></span> <?php echo esc_html( self::roles_label( (array) $change['after'] ) ); ?></ins>
+									<?php endif; ?>
 								</div>
 							<?php endif; ?>
 						</td>
-						<td><?php $this->render_caps( (array) $change['lost'] ); ?></td>
+						<td><?php $this->render_caps( (array) ( ! empty( $change['lost'] ) ? $change['lost'] : ( $change['gained'] ?? array() ) ) ); ?></td>
 						<td class="rrs-undo">
 							<?php if ( $change['undone'] ) : ?>
 								<span class="axle-badge axle-badge--neutral"><?php esc_html_e( 'Undone', 'role-right-sizer' ); ?></span>
@@ -1249,11 +1269,14 @@ final class Screen implements Service {
 									__( 'Undo', 'role-right-sizer' ),
 									array( 'change' => $change['id'] ),
 									array(
-										'confirm'       => 'unused_cap' === $change['kind']
+										'confirm'       => 'fix_cap' === $change['kind']
+											/* translators: %s: capability. */
+											? sprintf( __( 'This takes %s away from this person again. The change stays in the log as undone.', 'role-right-sizer' ), (string) $change['cap'] )
+											: ( 'unused_cap' === $change['kind']
 											/* translators: 1: capability, 2: role. */
 											? sprintf( __( 'This gives %1$s back to the %2$s role, for everyone with the role.', 'role-right-sizer' ), (string) $change['cap'], self::role_label( (string) $change['role'] ) )
 											/* translators: 1: roles they have now, 2: roles they get back. */
-											: sprintf( __( 'This changes the role from %1$s back to %2$s, and gives back the capabilities listed. The change stays in the log as undone.', 'role-right-sizer' ), self::roles_label( (array) $change['after'] ), self::roles_label( (array) $change['before'] ) ),
+											: sprintf( __( 'This changes the role from %1$s back to %2$s, and gives back the capabilities listed. The change stays in the log as undone.', 'role-right-sizer' ), self::roles_label( (array) $change['after'] ), self::roles_label( (array) $change['before'] ) ) ),
 										'confirm_label' => __( 'Undo this change', 'role-right-sizer' ),
 									)
 								);
@@ -1437,11 +1460,14 @@ final class Screen implements Service {
 	/**
 	 * Prints the capabilities a user used, with the last date for each.
 	 *
-	 * @param array<string, int> $used `cap => last used`.
+	 * @param array<string, int> $used    `cap => last used`.
+	 * @param int                $user_id The person, to show what they used through temporary access.
 	 */
-	private function render_used( array $used ): void {
+	private function render_used( array $used, int $user_id = 0 ): void {
+		$lent = $user_id ? Store::since( $this->store->elevated_usage( $user_id ), time() - $this->settings->window_days() * DAY_IN_SECONDS ) : array();
 		if ( ! $used ) {
 			echo '<span class="axle-muted">' . esc_html__( 'Nothing beyond reading', 'role-right-sizer' ) . '</span>';
+			$this->render_lent( $lent );
 			return;
 		}
 		arsort( $used );
@@ -1460,6 +1486,35 @@ final class Screen implements Service {
 			</ul>
 		</details>
 		<?php
+		$this->render_lent( $lent );
+	}
+
+	/**
+	 * Prints the capabilities a person used only through temporary access, which a recommendation ignores.
+	 *
+	 * @param array<string, int> $lent `cap => last used`.
+	 */
+	private function render_lent( array $lent ): void {
+		if ( ! $lent ) {
+			return;
+		}
+		arsort( $lent );
+		?>
+		<details class="rrs-caps rrs-lent">
+			<summary>
+				<?php
+				/* translators: %s: number of capabilities. */
+				echo esc_html( sprintf( _n( '%s capability through Elevate', '%s capabilities through Elevate', count( $lent ), 'role-right-sizer' ), number_format_i18n( count( $lent ) ) ) );
+				?>
+			</summary>
+			<p class="description"><?php esc_html_e( 'Used while access was lent for a time. It is left out of the recommendation.', 'role-right-sizer' ); ?></p>
+			<ul>
+				<?php foreach ( $lent as $cap => $last ) : ?>
+					<li><code><?php echo esc_html( (string) $cap ); ?></code> <span class="axle-muted"><?php self::print_time( (int) $last ); ?></span></li>
+				<?php endforeach; ?>
+			</ul>
+		</details>
+		<?php
 	}
 
 	/**
@@ -1469,33 +1524,39 @@ final class Screen implements Service {
 	 */
 	private static function error_messages(): array {
 		return array(
-			'role_right_sizer_self'             => __( 'You cannot change your own role here.', 'role-right-sizer' ),
-			'role_right_sizer_excluded'         => __( 'One of the selected accounts or roles is on the exclude list.', 'role-right-sizer' ),
-			'role_right_sizer_last_admin'       => __( 'The last administrator keeps their role.', 'role-right-sizer' ),
-			'role_right_sizer_forbidden'        => __( 'You are not allowed to change one of the selected accounts.', 'role-right-sizer' ),
-			'role_right_sizer_nothing'          => __( 'One of the selected recommendations no longer applies.', 'role-right-sizer' ),
-			'role_right_sizer_not_found'        => __( 'That change or account no longer exists.', 'role-right-sizer' ),
-			'role_right_sizer_undone'           => __( 'That change was already undone.', 'role-right-sizer' ),
-			'role_right_sizer_gone'             => __( 'The account or role of that change no longer exists.', 'role-right-sizer' ),
-			'role_right_sizer_protected'        => __( 'Capabilities are never removed from the administrator role or a role that can manage options.', 'role-right-sizer' ),
-			'role_right_sizer_trial_exists'     => __( 'One of the selected people is already on a trial.', 'role-right-sizer' ),
-			'role_right_sizer_trial_type'       => __( 'Only accounts that are still in use can be tried with a smaller role.', 'role-right-sizer' ),
-			'role_right_sizer_trial_not_found'  => __( 'That trial does not exist.', 'role-right-sizer' ),
-			'role_right_sizer_trial_closed'     => __( 'That trial is already over.', 'role-right-sizer' ),
-			'role_right_sizer_trial_denials'    => __( 'This trial has denials, so it needs a decision from a person.', 'role-right-sizer' ),
-			'role_right_sizer_nothing_picked'   => __( 'Nothing was selected, so nothing changed.', 'role-right-sizer' ),
-			'role_right_sizer_review_not_found' => __( 'That review does not exist.', 'role-right-sizer' ),
-			'role_right_sizer_review_open'      => __( 'A review is already open. Finish it or discard it first.', 'role-right-sizer' ),
-			'role_right_sizer_review_due'       => __( 'The due date has passed. Pick a day that has not come yet.', 'role-right-sizer' ),
-			'role_right_sizer_review_too_big'   => __( 'This site has more accounts than one review can hold. Raise the limit with the role_right_sizer_review_limit filter.', 'role-right-sizer' ),
-			'role_right_sizer_review_empty'     => __( 'There are no accounts you may review.', 'role-right-sizer' ),
-			'role_right_sizer_review_closed'    => __( 'That review is already finished, so it cannot change.', 'role-right-sizer' ),
-			'role_right_sizer_review_entry'     => __( 'One of the accounts is not in this review, or you may not review it.', 'role-right-sizer' ),
-			'role_right_sizer_review_decision'  => __( 'Choose Keep, Reduce or Remove access.', 'role-right-sizer' ),
-			'role_right_sizer_review_role'      => __( 'Choose the role to reduce to.', 'role-right-sizer' ),
-			'role_right_sizer_review_undecided' => __( 'Some accounts have no decision yet. Choose Keep, Reduce or Remove for each one first.', 'role-right-sizer' ),
-			'role_right_sizer_more_access'      => __( 'That role would give more access than the person has now.', 'role-right-sizer' ),
-			'role_right_sizer_role_unknown'     => __( 'That role does not exist.', 'role-right-sizer' ),
+			'role_right_sizer_self'              => __( 'You cannot change your own role here.', 'role-right-sizer' ),
+			'role_right_sizer_excluded'          => __( 'One of the selected accounts or roles is on the exclude list.', 'role-right-sizer' ),
+			'role_right_sizer_last_admin'        => __( 'The last administrator keeps their role.', 'role-right-sizer' ),
+			'role_right_sizer_forbidden'         => __( 'You are not allowed to change one of the selected accounts.', 'role-right-sizer' ),
+			'role_right_sizer_nothing'           => __( 'One of the selected recommendations no longer applies.', 'role-right-sizer' ),
+			'role_right_sizer_not_found'         => __( 'That change or account no longer exists.', 'role-right-sizer' ),
+			'role_right_sizer_undone'            => __( 'That change was already undone.', 'role-right-sizer' ),
+			'role_right_sizer_gone'              => __( 'The account or role of that change no longer exists.', 'role-right-sizer' ),
+			'role_right_sizer_protected'         => __( 'Capabilities are never removed from the administrator role or a role that can manage options.', 'role-right-sizer' ),
+			'role_right_sizer_trial_exists'      => __( 'One of the selected people is already on a trial.', 'role-right-sizer' ),
+			'role_right_sizer_probe_target'      => __( 'Name an admin screen of this site, such as upload.php, or a REST route, such as /wp/v2/media.', 'role-right-sizer' ),
+			'role_right_sizer_probe_blocked'     => __( 'That file acts on a plain request, so it cannot be loaded as another person. Check the screen that uses it instead.', 'role-right-sizer' ),
+			'role_right_sizer_probe_unreachable' => __( 'The check could not load the page. Your site has to be able to reach its own address. Site Health shows whether it can.', 'role-right-sizer' ),
+			'role_right_sizer_fix_cap'           => __( 'You can only give a capability you have yourself.', 'role-right-sizer' ),
+			'role_right_sizer_fix_role'          => __( 'You are not allowed to give that role.', 'role-right-sizer' ),
+			'role_right_sizer_fix_type'          => __( 'Choose to give one capability or one role.', 'role-right-sizer' ),
+			'role_right_sizer_trial_type'        => __( 'Only accounts that are still in use can be tried with a smaller role.', 'role-right-sizer' ),
+			'role_right_sizer_trial_not_found'   => __( 'That trial does not exist.', 'role-right-sizer' ),
+			'role_right_sizer_trial_closed'      => __( 'That trial is already over.', 'role-right-sizer' ),
+			'role_right_sizer_trial_denials'     => __( 'This trial has denials, so it needs a decision from a person.', 'role-right-sizer' ),
+			'role_right_sizer_nothing_picked'    => __( 'Nothing was selected, so nothing changed.', 'role-right-sizer' ),
+			'role_right_sizer_review_not_found'  => __( 'That review does not exist.', 'role-right-sizer' ),
+			'role_right_sizer_review_open'       => __( 'A review is already open. Finish it or discard it first.', 'role-right-sizer' ),
+			'role_right_sizer_review_due'        => __( 'The due date has passed. Pick a day that has not come yet.', 'role-right-sizer' ),
+			'role_right_sizer_review_too_big'    => __( 'This site has more accounts than one review can hold. Raise the limit with the role_right_sizer_review_limit filter.', 'role-right-sizer' ),
+			'role_right_sizer_review_empty'      => __( 'There are no accounts you may review.', 'role-right-sizer' ),
+			'role_right_sizer_review_closed'     => __( 'That review is already finished, so it cannot change.', 'role-right-sizer' ),
+			'role_right_sizer_review_entry'      => __( 'One of the accounts is not in this review, or you may not review it.', 'role-right-sizer' ),
+			'role_right_sizer_review_decision'   => __( 'Choose Keep, Reduce or Remove access.', 'role-right-sizer' ),
+			'role_right_sizer_review_role'       => __( 'Choose the role to reduce to.', 'role-right-sizer' ),
+			'role_right_sizer_review_undecided'  => __( 'Some accounts have no decision yet. Choose Keep, Reduce or Remove for each one first.', 'role-right-sizer' ),
+			'role_right_sizer_more_access'       => __( 'That role would give more access than the person has now.', 'role-right-sizer' ),
+			'role_right_sizer_role_unknown'      => __( 'That role does not exist.', 'role-right-sizer' ),
 		);
 	}
 
@@ -1561,6 +1622,9 @@ final class Screen implements Service {
 			case 'review_discarded':
 				$message = __( 'Review discarded. No account changed.', 'role-right-sizer' );
 				break;
+			case 'fixed':
+				$message = __( 'Gave the access. It is in the change log, where Undo takes it away. Run the check again to see it work.', 'role-right-sizer' );
+				break;
 			case 'steps_dismissed':
 				$message = __( 'Dismissed. The recommendations stay on this screen.', 'role-right-sizer' );
 				break;
@@ -1571,7 +1635,7 @@ final class Screen implements Service {
 			<div class="notice notice-success is-dismissible rrs-notice">
 				<p>
 					<span class="rrs-notice-text"><?php echo esc_html( $message ); ?></span>
-					<?php if ( in_array( $done, array( 'applied', 'trial_started', 'review_finished' ), true ) && $batch ) : ?>
+					<?php if ( in_array( $done, array( 'applied', 'trial_started', 'review_finished', 'fixed' ), true ) && $batch ) : ?>
 						<?php self::print_action( 'undo_batch', $count > 1 ? __( 'Undo all', 'role-right-sizer' ) : __( 'Undo', 'role-right-sizer' ), array( 'batch' => $batch ), array( 'style' => 'link' ) ); ?>
 					<?php endif; ?>
 				</p>
@@ -1612,6 +1676,11 @@ final class Screen implements Service {
 			}
 			$args['tab'] = $tab;
 			wp_safe_redirect( self::url( array_filter( $args ) ) );
+			exit;
+		}
+
+		if ( 0 === strpos( $task, 'check_' ) && in_array( $task, array( 'check_run', 'check_fix' ), true ) ) {
+			wp_safe_redirect( self::url( array_filter( $this->check->handle( $task ) ) ) );
 			exit;
 		}
 

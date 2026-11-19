@@ -630,6 +630,378 @@
           "call": "clean"
         }
       ]
+    },
+    {
+      "name": "Refused on trial: the wall page with the request button and a way back",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "wp": [
+            "role-right-sizer",
+            "trial",
+            "start",
+            "pat"
+          ]
+        },
+        {
+          "wp": [
+            "user",
+            "update",
+            "pat",
+            "--user_pass=password"
+          ]
+        }
+      ],
+      "url": "/wp-admin/plugins.php",
+      "loggedOut": true,
+      "steps": [
+        {
+          "logIn": "pat",
+          "password": "password"
+        },
+        {
+          "evaluate": "window.location.href = '/wp-admin/plugins.php'"
+        },
+        {
+          "waitFor": ".role-right-sizer-wall"
+        }
+      ],
+      "include": [
+        ".role-right-sizer-wall"
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer > Why can't they? form",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "wp": [
+            "user",
+            "get",
+            "olive",
+            "--field=ID"
+          ],
+          "save": "olive"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&view=check&user={olive}",
+      "steps": [
+        {
+          "waitFor": ".rrs-check-form"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer > Why can't they? refused, with the smallest fix and its confirmation open",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "wp": [
+            "user",
+            "create",
+            "jo",
+            "jo@example.com",
+            "--role=subscriber",
+            "--user_pass=password",
+            "--display_name=Jo Park"
+          ],
+          "mayFail": true
+        },
+        {
+          "js": "seed.js",
+          "call": "bridge"
+        },
+        {
+          "wp": [
+            "user",
+            "get",
+            "jo",
+            "--field=ID"
+          ],
+          "save": "jo"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&view=check&user={jo}&kind=rest&target=/wp/v2/media&method=POST",
+      "steps": [
+        {
+          "click": "role=button[name=/Check what Jo Park can do/i]"
+        },
+        {
+          "waitFor": ".rrs-check-result .rrs-check-fixes"
+        },
+        {
+          "click": ".rrs-check-result summary >> text=Give only upload_files"
+        },
+        {
+          "waitFor": ".rrs-check-result .axle-confirm"
+        }
+      ],
+      "cleanup": [
+        {
+          "wp": [
+            "user",
+            "delete",
+            "jo",
+            "--yes",
+            "--reassign=1"
+          ],
+          "mayFail": true
+        },
+        {
+          "js": "seed.js",
+          "call": "unbridge"
+        },
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer > Why can't they? allowed",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "bridge"
+        },
+        {
+          "wp": [
+            "user",
+            "get",
+            "olive",
+            "--field=ID"
+          ],
+          "save": "olive"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&view=check&user={olive}&kind=screen&target=edit.php",
+      "steps": [
+        {
+          "click": "role=button[name=/Check what Olive Grant can do/i]"
+        },
+        {
+          "waitFor": ".rrs-check-result .axle-badge--success"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "unbridge"
+        },
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer > Why can't they? refused with no capability to blame",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "bridge"
+        },
+        {
+          "wp": [
+            "user",
+            "get",
+            "olive",
+            "--field=ID"
+          ],
+          "save": "olive"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&view=check&user={olive}&kind=screen&target=plugins.php",
+      "steps": [
+        {
+          "click": "role=button[name=/Check what Olive Grant can do/i]"
+        },
+        {
+          "waitFor": ".rrs-check-result .axle-badge--error"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "unbridge"
+        },
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer > Why can't they? error for a screen that cannot be loaded",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "wp": [
+            "user",
+            "get",
+            "olive",
+            "--field=ID"
+          ],
+          "save": "olive"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&view=check&user={olive}&rrs_errors=role_right_sizer_probe_blocked",
+      "steps": [
+        {
+          "waitFor": ".notice-error"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer change log with a capability given and Undo",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "wp": [
+            "user",
+            "create",
+            "jo",
+            "jo@example.com",
+            "--role=subscriber",
+            "--user_pass=password",
+            "--display_name=Jo Park"
+          ],
+          "mayFail": true
+        },
+        {
+          "wp": [
+            "role-right-sizer",
+            "access",
+            "fix",
+            "jo",
+            "--cap=upload_files",
+            "--yes"
+          ]
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer&tab=changes",
+      "steps": [
+        {
+          "waitFor": ".rrs-changes"
+        }
+      ],
+      "cleanup": [
+        {
+          "wp": [
+            "user",
+            "delete",
+            "jo",
+            "--yes",
+            "--reassign=1"
+          ],
+          "mayFail": true
+        },
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
+    },
+    {
+      "name": "Users > Right-Sizer recommendations with capabilities used through Elevate open",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seed"
+        },
+        [
+          "role-right-sizer",
+          "report"
+        ],
+        {
+          "js": "seed.js",
+          "call": "elevatedUsage"
+        }
+      ],
+      "url": "/wp-admin/users.php?page=role-right-sizer",
+      "steps": [
+        {
+          "click": "tr[data-user=\"pat\"] .rrs-lent summary"
+        },
+        {
+          "waitFor": "tr[data-user=\"pat\"] .rrs-lent ul"
+        }
+      ],
+      "cleanup": [
+        {
+          "js": "seed.js",
+          "call": "clean"
+        }
+      ]
     }
   ],
   "skip": {}

@@ -125,7 +125,7 @@ final class PrivacyAbilitiesTest extends PluginTestCase {
 		list( $abilities ) = $this->parts();
 		$abilities->register_abilities();
 
-		$this->assertSame( array( 'role-right-sizer/get-recommendations', 'role-right-sizer/get-user-usage', 'role-right-sizer/apply-recommendation', 'role-right-sizer/undo-change', 'role-right-sizer/get-changes', 'role-right-sizer/list-trials', 'role-right-sizer/list-reviews', 'role-right-sizer/export-review', 'role-right-sizer/start-trial', 'role-right-sizer/restore-trial', 'role-right-sizer/extend-trial', 'role-right-sizer/keep-trial' ), array_keys( $this->registered ) );
+		$this->assertSame( array( 'role-right-sizer/get-recommendations', 'role-right-sizer/get-user-usage', 'role-right-sizer/apply-recommendation', 'role-right-sizer/undo-change', 'role-right-sizer/get-changes', 'role-right-sizer/list-trials', 'role-right-sizer/list-reviews', 'role-right-sizer/export-review', 'role-right-sizer/check-access', 'role-right-sizer/give-access', 'role-right-sizer/start-trial', 'role-right-sizer/restore-trial', 'role-right-sizer/extend-trial', 'role-right-sizer/keep-trial' ), array_keys( $this->registered ) );
 		foreach ( $this->registered as $args ) {
 			$this->assertTrue( $args['meta']['public'] );
 			$this->assertTrue( $args['meta']['mcp']['public'] );
