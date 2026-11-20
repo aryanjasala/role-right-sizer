@@ -292,7 +292,7 @@ final class Report implements Service {
 				++$report['too_new'];
 			}
 			$used = $this->store->used_since( $user->ID, $since );
-			foreach ( (array) $user->roles as $role ) {
+			foreach ( Temporary::permanent_roles( $user ) as $role ) {
 				$report['role_users'][ $role ] = (int) ( $report['role_users'][ $role ] ?? 0 ) + 1;
 				foreach ( $used as $cap => $last ) {
 					$report['role_usage'][ $role ][ $cap ] = max( (int) ( $report['role_usage'][ $role ][ $cap ] ?? 0 ), $last );

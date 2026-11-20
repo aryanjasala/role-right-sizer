@@ -108,6 +108,15 @@ function trialWithDenials() {
 	` );
 }
 
+/** Says Pat also used a capability while Axle Elevate had lent an administrator role, so the screen can show it apart. Run after seed(). */
+function elevatedUsage() {
+	wpEval( `
+		$user = get_user_by( 'login', 'pat' );
+		$when = time() - 2 * DAY_IN_SECONDS;
+		update_user_option( $user->ID, 'role_right_sizer_elevated_usage', array( 'install_plugins' => array( $when, $when, 1 ), 'update_core' => array( $when, $when, 1 ) ) );
+	` );
+}
+
 /** Makes every open trial's time run out, and runs the check. */
 function endTrials() {
 	wpEval( `
@@ -118,7 +127,20 @@ function endTrials() {
 	` );
 }
 
-module.exports = { seed, clean, trialWithDenials, endTrials, reviewInProgress, reviewFinished };
+module.exports = { seed, clean, elevatedUsage, trialWithDenials, endTrials, reviewInProgress, reviewFinished, bridge, unbridge };
+
+// The site address (localhost:PORT) is not reachable from inside the containers. The web container is called wp.
+const BRIDGE = "<?php\\nadd_filter( 'role_right_sizer_probe_fetch_url', function ( \\$u ) { \\$p = wp_parse_url( \\$u ); return 'http://wp' . ( \\$p['path'] ?? '/' ) . ( isset( \\$p['query'] ) ? '?' . \\$p['query'] : '' ); } );\\nadd_filter( 'role_right_sizer_probe_request_args', function ( \\$a ) { \\$h = wp_parse_url( home_url() ); \\$a['headers']['Host'] = \\$h['host'] . ( isset( \\$h['port'] ) ? ':' . \\$h['port'] : '' ); return \\$a; } );\\n";
+
+/** Lets the site's own requests reach itself from inside the Docker containers. */
+function bridge() {
+	wpEval( `wp_mkdir_p( WPMU_PLUGIN_DIR ); file_put_contents( WPMU_PLUGIN_DIR . '/rrs-probe-bridge.php', "${ BRIDGE }" );` );
+}
+
+/** Removes the bridge. */
+function unbridge() {
+	wpEval( "wp_delete_file( WPMU_PLUGIN_DIR . '/rrs-probe-bridge.php' );" );
+}
 
 /** Starts a review of the team with a few decisions made. Run after seed(). */
 function reviewInProgress() {

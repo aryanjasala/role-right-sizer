@@ -7,12 +7,16 @@
 
 namespace AryanX\Axle\RoleRightSizer;
 
+use AryanX\Axle\RoleRightSizer\Admin\CheckScreen;
 use AryanX\Axle\RoleRightSizer\Admin\NetworkScreen;
 use AryanX\Axle\RoleRightSizer\Admin\Screen;
+use AryanX\Axle\RoleRightSizer\Cli\AccessCommand;
 use AryanX\Axle\RoleRightSizer\Cli\Command;
 use AryanX\Axle\RoleRightSizer\Cli\ReviewCommand;
 use AryanX\Axle\RoleRightSizer\Cli\TrialCommand;
 use AryanX\Axle\RoleRightSizer\Health\SiteHealth;
+use AryanX\Axle\RoleRightSizer\Probe\Prober;
+use AryanX\Axle\RoleRightSizer\Probe\Responder;
 use AryanX\Axle\RoleRightSizer\Trial\Watcher;
 use AryanX\Axle\RoleRightSizer\Usage\AdminScreens;
 use AryanX\Axle\RoleRightSizer\Usage\HookMap;
@@ -254,6 +258,7 @@ final class Plugin {
 	private function register(): void {
 		$this->settings->tracking_started();
 
+		$check    = new CheckScreen( new Prober(), $this->applier, $this->trials );
 		$services = array(
 			$this->recorder,
 			$this->history,
@@ -263,7 +268,9 @@ final class Plugin {
 			$this->trials,
 			$this->reviews,
 			new Watcher( $this->trials ),
-			new Screen( $this->settings, $this->store, $this->recommender, $this->report, $this->changes, $this->applier, $this->trials, $this->reviews ),
+			new Responder(),
+			$check,
+			new Screen( $this->settings, $this->store, $this->recommender, $this->report, $this->changes, $this->applier, $this->trials, $this->reviews, $check ),
 			new NetworkScreen( $this->store ),
 			new SiteHealth( $this->settings, $this->report, $this->trials, $this->reviews ),
 			new Privacy( $this->store, $this->changes, $this->trials, $this->reviews ),
@@ -278,6 +285,7 @@ final class Plugin {
 			\WP_CLI::add_command( 'role-right-sizer', new Command( $this->settings, $this->store, $this->recommender, $this->report, $this->changes, $this->applier ) );
 			\WP_CLI::add_command( 'role-right-sizer trial', new TrialCommand( $this->trials ) );
 			\WP_CLI::add_command( 'role-right-sizer review', new ReviewCommand( $this->reviews ) );
+			\WP_CLI::add_command( 'role-right-sizer access', new AccessCommand( new Prober(), $this->applier ) );
 		}
 	}
 }

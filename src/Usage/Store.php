@@ -20,6 +20,7 @@ final class Store {
 
 	public const USAGE       = 'role_right_sizer_usage';
 	public const ABILITIES   = 'role_right_sizer_abilities';
+	public const ELEVATED    = 'role_right_sizer_elevated_usage';
 	public const LAST_ACTIVE = 'role_right_sizer_last_active';
 	public const LAST_LOGIN  = 'role_right_sizer_last_login';
 
@@ -31,6 +32,17 @@ final class Store {
 	 */
 	public function usage( int $user_id ): array {
 		return self::clean( get_user_option( self::USAGE, $user_id ) );
+	}
+
+	/**
+	 * Capabilities a user used only because Axle Elevate lent them access:
+	 * `cap => [ first_used, last_used, count ]`. These never count towards a recommendation.
+	 *
+	 * @param int $user_id User ID.
+	 * @return array<string, int[]>
+	 */
+	public function elevated_usage( int $user_id ): array {
+		return self::clean( get_user_option( self::ELEVATED, $user_id ) );
 	}
 
 	/**
@@ -103,6 +115,24 @@ final class Store {
 	}
 
 	/**
+	 * Adds capabilities used through temporary access, at most once per interval for each.
+	 *
+	 * @param int      $user_id  User ID.
+	 * @param string[] $caps     Capabilities used in this request.
+	 * @param int      $now      Unix time.
+	 * @param int      $interval Seconds between two writes of the same capability.
+	 * @return bool Whether anything was written.
+	 */
+	public function add_elevated_usage( int $user_id, array $caps, int $now, int $interval ): bool {
+		list( $usage, $changed ) = self::merge( $this->elevated_usage( $user_id ), $caps, $now, $interval );
+		if ( $changed ) {
+			update_user_option( $user_id, self::ELEVATED, $usage );
+		}
+
+		return $changed;
+	}
+
+	/**
 	 * Adds ability runs to a user's record, at most once per interval for each.
 	 *
 	 * @param int      $user_id   User ID.
@@ -155,9 +185,10 @@ final class Store {
 	 * @return bool Whether there was anything to delete.
 	 */
 	public function forget( int $user_id ): bool {
-		$had = (bool) ( $this->usage( $user_id ) || $this->abilities( $user_id ) || $this->last_seen( $user_id ) );
+		$had = (bool) ( $this->usage( $user_id ) || $this->elevated_usage( $user_id ) || $this->abilities( $user_id ) || $this->last_seen( $user_id ) );
 
 		delete_user_option( $user_id, self::USAGE );
+		delete_user_option( $user_id, self::ELEVATED );
 		delete_user_option( $user_id, self::ABILITIES );
 		delete_user_option( $user_id, self::LAST_ACTIVE );
 		delete_user_meta( $user_id, self::LAST_LOGIN );

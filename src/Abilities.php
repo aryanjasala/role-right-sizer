@@ -8,6 +8,7 @@
 namespace AryanX\Axle\RoleRightSizer;
 
 use AryanX\Axle\RoleRightSizer\Admin\Screen;
+use AryanX\Axle\RoleRightSizer\Probe\Prober;
 use AryanX\Axle\RoleRightSizer\Usage\Store;
 
 defined( 'ABSPATH' ) || exit;
@@ -578,6 +579,112 @@ final class Abilities implements Service {
 		);
 
 		$this->ability(
+			'check-access',
+			__( 'Check why a person cannot do something', 'role-right-sizer' ),
+			__( 'Tries an admin screen or a REST route of this site as a person, without signing in as them, and says whether it was allowed, which capability refused it, which roles have that capability and the smallest fixes. A REST write is checked for permission and stopped, so nothing is saved. Needs the right to edit that person.', 'role-right-sizer' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'user_id' => array(
+						'type'    => 'integer',
+						'minimum' => 1,
+					),
+					'screen'  => array(
+						'type'        => 'string',
+						'description' => 'An admin screen, such as upload.php or admin.php?page=my-plugin. Give this or route.',
+					),
+					'route'   => array(
+						'type'        => 'string',
+						'description' => 'A REST route of this site, such as /wp/v2/media. Give this or screen.',
+					),
+					'method'  => array(
+						'type'        => 'string',
+						'enum'        => array( 'GET', 'POST', 'PUT', 'PATCH', 'DELETE' ),
+						'description' => 'For routes. Defaults to GET.',
+					),
+				),
+				'required'             => array( 'user_id' ),
+				'additionalProperties' => false,
+			),
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'verdict'       => array(
+						'type' => 'string',
+						'enum' => array( 'allowed', 'refused', 'redirected', 'missing', 'error' ),
+					),
+					'status'        => array( 'type' => 'integer' ),
+					'capability'    => array(
+						'type'        => 'string',
+						'description' => 'The capability that refused it. Empty when none did.',
+					),
+					'roles_with'    => $caps,
+					'failed_checks' => $caps,
+					'fixes'         => array(
+						'type'  => 'array',
+						'items' => array(
+							'type'       => 'object',
+							'properties' => array(
+								'type'   => array(
+									'type' => 'string',
+									'enum' => array( 'cap', 'role' ),
+								),
+								'value'  => array( 'type' => 'string' ),
+								'gained' => $caps,
+							),
+						),
+					),
+				),
+			),
+			array( $this, 'check_access' ),
+			function ( $input = null ) use ( $can_manage ): bool {
+				return $can_manage() && Prober::can_check( (int) ( ( (array) $input )['user_id'] ?? 0 ) );
+			},
+			array(
+				'readonly'   => true,
+				'idempotent' => true,
+			)
+		);
+
+		$this->ability(
+			'give-access',
+			__( 'Give a person the access a check found missing', 'role-right-sizer' ),
+			__( 'Gives one capability, or one more role, to a person. You can only give a capability you have, and a role WordPress lets you assign. The change is logged, and undo-change takes it away. Refused for your own account, the exclude list and people on a role trial.', 'role-right-sizer' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'user_id'    => array(
+						'type'    => 'integer',
+						'minimum' => 1,
+					),
+					'capability' => array(
+						'type'        => 'string',
+						'description' => 'Give this capability to the person only. Give this or role.',
+					),
+					'role'       => array(
+						'type'        => 'string',
+						'description' => 'Add this role to the person. Give this or capability.',
+					),
+				),
+				'required'             => array( 'user_id' ),
+				'additionalProperties' => false,
+			),
+			array(
+				'type'       => 'object',
+				'properties' => array( 'change' => $change ),
+			),
+			array( $this, 'give_access' ),
+			function ( $input = null ) use ( $can_manage ): bool {
+				return $can_manage() && Access::can_manage_user( (int) ( ( (array) $input )['user_id'] ?? 0 ) );
+			},
+			array(
+				'readonly'    => false,
+				'destructive' => false,
+				'idempotent'  => false,
+			)
+		);
+
+		$this->ability(
 			'start-trial',
 			__( 'Start a role trial', 'role-right-sizer' ),
 			__( 'Gives a user their recommended smaller role for a number of days and records what they could not do. The change is logged, and restore-trial gives the old role back. Refused for your own account, the last administrator, anything on the exclude list and accounts that are not active.', 'role-right-sizer' ),
@@ -939,6 +1046,78 @@ final class Abilities implements Service {
 	}
 
 	/**
+	 * Ability: checks what stops a person.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array|\WP_Error
+	 */
+	public function check_access( $input = null ) {
+		$input = (array) $input;
+		$user  = get_userdata( (int) ( $input['user_id'] ?? 0 ) );
+		if ( ! $user instanceof \WP_User ) {
+			return new \WP_Error( 'role_right_sizer_not_found', __( 'That user does not exist.', 'role-right-sizer' ), array( 'status' => 404 ) );
+		}
+		if ( ! empty( $input['screen'] ) === ! empty( $input['route'] ) ) {
+			return new \WP_Error( 'role_right_sizer_probe_target', __( 'Give either a screen or a route.', 'role-right-sizer' ), array( 'status' => 400 ) );
+		}
+
+		$kind   = ! empty( $input['route'] ) ? 'rest' : 'screen';
+		$result = ( new Prober() )->run( $user->ID, $kind, (string) ( 'rest' === $kind ? $input['route'] : $input['screen'] ), (string) ( $input['method'] ?? 'GET' ) );
+		if ( is_wp_error( $result ) ) {
+			return new \WP_Error( $result->get_error_code(), $result->get_error_message(), array( 'status' => 400 ) );
+		}
+
+		$fixes = array();
+		foreach ( 'refused' === $result['verdict'] && '' !== $result['cap'] ? Prober::fixes( $user, $result['cap'] ) : array() as $fix ) {
+			$fixes[] = $fix;
+		}
+
+		return array(
+			'verdict'       => $result['verdict'],
+			'status'        => $result['status'],
+			'capability'    => $result['cap'],
+			'roles_with'    => '' !== $result['cap'] ? Prober::roles_with( $result['cap'] ) : array(),
+			'failed_checks' => array_values( array_unique( array_column( $result['failed'], 'cap' ) ) ),
+			'fixes'         => $fixes,
+		);
+	}
+
+	/**
+	 * Ability: gives a person a capability or a role.
+	 *
+	 * @param mixed $input Ability input.
+	 * @return array|\WP_Error
+	 */
+	public function give_access( $input = null ) {
+		$input = (array) $input;
+		if ( ! empty( $input['capability'] ) === ! empty( $input['role'] ) ) {
+			return new \WP_Error( 'role_right_sizer_fix_type', __( 'Give either a capability or a role.', 'role-right-sizer' ), array( 'status' => 400 ) );
+		}
+
+		$type   = ! empty( $input['role'] ) ? 'role' : 'cap';
+		$value  = (string) ( 'role' === $type ? sanitize_key( (string) $input['role'] ) : sanitize_text_field( (string) $input['capability'] ) );
+		$change = $this->applier->apply_fix( (int) ( $input['user_id'] ?? 0 ), $type, $value );
+		if ( is_wp_error( $change ) ) {
+			return new \WP_Error( $change->get_error_code(), $change->get_error_message(), array( 'status' => 400 ) );
+		}
+		$this->report->rebuild();
+
+		return array(
+			'change' => array(
+				'id'      => (int) $change['id'],
+				'batch'   => (int) $change['batch'],
+				'kind'    => (string) $change['kind'],
+				'user_id' => (int) $change['user_id'],
+				'before'  => array_values( (array) $change['before'] ),
+				'after'   => array_values( (array) $change['after'] ),
+				'role'    => 'role' === $type ? $value : '',
+				'cap'     => (string) ( $change['cap'] ?? '' ),
+				'lost'    => array(),
+			),
+		);
+	}
+
+	/**
 	 * Ability: starts a trial.
 	 *
 	 * @param mixed $input Ability input.
@@ -1055,6 +1234,8 @@ final class Abilities implements Service {
 				return $this->preview_apply( $input );
 			case self::CATEGORY . '/undo-change':
 				return $this->preview_undo( $input );
+			case self::CATEGORY . '/give-access':
+				return $this->preview_give_access( $input );
 			case self::CATEGORY . '/start-trial':
 				return $this->preview_start_trial( $input );
 			case self::CATEGORY . '/restore-trial':
@@ -1164,7 +1345,15 @@ final class Abilities implements Service {
 			if ( $item['undone'] ) {
 				continue;
 			}
-			if ( 'unused_cap' === $item['kind'] ) {
+			if ( 'fix_cap' === $item['kind'] ) {
+				$user   = get_userdata( (int) $item['user_id'] );
+				$rows[] = array(
+					/* translators: %s: user name. */
+					'field'  => sprintf( __( 'Capabilities of %s', 'role-right-sizer' ), $user ? $user->display_name : (string) $item['login'] ),
+					'before' => (string) $item['cap'],
+					'after'  => '',
+				);
+			} elseif ( 'unused_cap' === $item['kind'] ) {
 				$rows[] = array(
 					/* translators: %s: role. */
 					'field'  => sprintf( __( 'Capabilities of %s', 'role-right-sizer' ), Screen::role_label( (string) $item['role'] ) ),
@@ -1190,6 +1379,35 @@ final class Abilities implements Service {
 			/* translators: %s: number of changes. */
 			'summary' => sprintf( _n( 'Undoes %s Role Right-Sizer change and puts back what it took away.', 'Undoes %s Role Right-Sizer changes and puts back what they took away.', count( $rows ), 'role-right-sizer' ), number_format_i18n( count( $rows ) ) ),
 			'changes' => $rows,
+		);
+	}
+
+	/**
+	 * Preview of give-access.
+	 *
+	 * @param array $input Ability input.
+	 * @return array
+	 */
+	private function preview_give_access( array $input ): array {
+		$user = get_userdata( (int) ( $input['user_id'] ?? 0 ) );
+		if ( ! $user ) {
+			return array( 'summary' => __( 'That user does not exist, so this call will fail.', 'role-right-sizer' ) );
+		}
+
+		$role = ! empty( $input['role'] );
+		$what = $role ? Screen::role_label( sanitize_key( (string) $input['role'] ) ) : sanitize_text_field( (string) ( $input['capability'] ?? '' ) );
+
+		return array(
+			/* translators: 1: capability or role, 2: user name. */
+			'summary' => sprintf( $role ? __( 'Adds the %1$s role to %2$s.', 'role-right-sizer' ) : __( 'Gives %2$s the %1$s capability.', 'role-right-sizer' ), $what, $user->display_name ),
+			'changes' => array(
+				array(
+					/* translators: %s: user name. */
+					'field'  => sprintf( $role ? __( 'Roles of %s', 'role-right-sizer' ) : __( 'Capabilities of %s', 'role-right-sizer' ), $user->display_name ),
+					'before' => $role ? Screen::roles_label( Temporary::permanent_roles( $user ) ) : '',
+					'after'  => $what,
+				),
+			),
 		);
 	}
 

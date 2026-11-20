@@ -14,7 +14,7 @@ While a trial is open, only that person is watched, and only for refusals that m
 
 Menus that hide entries, checks that decide what to show, `GET` requests and an expired nonce are not walls. The same wall is grouped and counted ("3 times, last 2 hours ago"). Nothing is written while the request runs: the refusals are saved on `shutdown`.
 
-At a wall the person sees "Your access was reduced 3 days ago as a trial. Ask for it back." with a **Request my access back** button. It emails whoever started the trial (or the site admin address for WP-CLI) once a day at most. REST errors carry the same sentence under `role_right_sizer_trial`.
+At a wall the person sees "Your access was reduced 3 days ago as a trial. Ask for it back." with a **Request my access back** button. It emails whoever started the trial (or the site admin address for WP-CLI) once a day at most. The page also says when the trial ends and has a **Back** link, and the button returns the person to the screen they came from. REST errors carry the same sentence under `role_right_sizer_trial`, and the shared `axle_wall` data too: in the block editor and in wp-admin a refused request becomes a notice with a **Request my access back** button, which posts to `role-right-sizer/v1/trial/request-access` (it needs the person's REST nonce and an open trial of their own).
 
 On **Users > Right-Sizer > Trials** you can restore the old role at any time, extend the trial, or make the smaller role permanent. Restore and Make permanent ask first, in place. When the time is up the person keeps the smaller role and the trial waits for a decision, and whoever started it gets an email. With the setting "Make the smaller role permanent" a trial that ended with no denials closes on its own. A trial with denials is never closed on its own. Undoing the change from the Changes tab also closes the trial. Site Health notes trials that wait for a decision.
 
@@ -23,13 +23,32 @@ On **Users > Right-Sizer > Trials** you can restore the old role at any time, ex
 **Users > Right-Sizer > Reviews** is for the question an auditor asks: when did you last go through who has access, and what did you decide?
 
 1. **Start a review.** It takes a snapshot of every account you may edit (`edit_user`): roles, last login and activity, the capabilities they used, and what Right-Sizer recommended at that moment. A name, a due date (14 days from now by default, `role_right_sizer_review_due_days`) and the people to tell are optional. Starting changes nothing. One review is open at a time. A site with more accounts than `role_right_sizer_review_limit` (5000) is refused, not cut short.
-2. **Decide for each account.** Keep, Reduce to a role (the recommended role is preselected) or Remove access, with an optional note. "Keep everyone not decided yet" marks the rest Keep. Decisions are saved with who made them and when, and several people can work on the same review. Your own account and accounts you may not change (`promote_user`) can only be kept.
+2. **Decide for each account.** Keep, Reduce to a role or Remove access. **Reduce to** lists only roles that grant fewer capabilities than the person has now, all of them ones they already have (the recommended role is preselected, otherwise nothing is), and the server refuses any other role, from the screen, WP-CLI or an ability, with an optional note. "Keep everyone not decided yet" marks the rest Keep. Decisions are saved with who made them and when, and several people can work on the same review. Your own account and accounts you may not change (`promote_user`) can only be kept.
 3. **Finish.** Every account needs a decision. The screen first lists what finishing would change and what it would skip, with the capabilities each person loses. Finishing applies Reduce and Remove through the change log as one batch, with the same protections as Apply: never your own account, never the last administrator, never the exclude list, never more access than the person has now, and not someone on a trial. An account that cannot be changed is recorded with the reason and does not stop the others. **Undo all changes** puts the batch back; the evidence then says which changes were undone.
 4. **Export the evidence.** **Download CSV** has one row per account: roles at the review, recommendation, decision, note, who decided and when, the outcome, the roles after, the capabilities lost and the change number. **Open printable report** is a plain HTML page with the same, who started and finished the review, and counts. Use the browser's Print command to save it as a PDF. Both leave out accounts you may not edit and say how many.
 
 An open review emails its reviewers a few days before the due date (`role_right_sizer_review_reminder_days`, 3) and again when it is overdue. Once `review_interval` days (90 by default, 0 for never, `role_right_sizer_review_interval_days`) have passed since the last finished review, an email goes to the site admin address once, and Site Health says a review is due. An open review past its date shows in Site Health too. Set the interval on the Settings tab or with `wp role-right-sizer settings --review-interval=60`.
 
 Abilities and WP-CLI list and export reviews. Agents cannot start, decide or finish one.
+
+## Why can't they?
+
+Someone writes "I can't upload images" after a role change. **Check what Pat can do** (a row action on Users, a button on the profile, or `Users > Right-Sizer` with `view=check`) tries one admin screen or one REST route as Pat and says what stopped it.
+
+- **Not signed in as them.** The request carries a logged-in cookie made for that one call. Its session token is destroyed right afterwards, whatever happens, and a signed probe cookie works once, for two minutes (`role_right_sizer_probe_ttl`), only for the person it names.
+- **Nothing is saved.** A REST route is answered right after its permission check, so a `POST`, `PUT`, `PATCH` or `DELETE` creates, changes and deletes nothing. A screen is always loaded with `GET`. No page or response body ever reaches you, only allowed or refused, the capability, and the roles that have it.
+- **Only this site, only people you may edit.** The target must be an admin file of this site (`upload.php`, `admin.php?page=my-plugin`) or a route of this site (`/wp/v2/media`). Files that act on a plain request (`admin-ajax.php`, `admin-post.php`, `update.php`, `export.php` and a few more) are refused (`role_right_sizer_probe_blocked_screens`). It needs the Right-Sizer capability and `edit_user` for the person.
+- **The answer.** Allowed, or refused with the capability, the roles that have it (smallest first) and every refused check. A screen the menu hides is refused with the capability its menu entry asks for. If WordPress refuses outright (`do_not_allow`), or no capability check failed, it says so and offers no fix.
+- **The smallest fix.** Give that one capability to the person only, or add the smallest role that has it on top of their roles. You only get what you could give yourself: a capability you hold, a role WordPress lets you assign (`get_editable_roles()`), never your own account, never the exclude list, never someone on a role trial. Each fix asks first, goes through the change log (`fix_cap` or `fix_role`) and has Undo.
+
+```sh
+wp role-right-sizer access check pat --route=/wp/v2/media --method=POST [--format=json]
+wp role-right-sizer access check pat --screen=plugins.php
+wp role-right-sizer access fix pat --cap=upload_files [--dry-run] [--yes]
+wp role-right-sizer access fix pat --role=author
+```
+
+The abilities `role-right-sizer/check-access` (read-only) and `role-right-sizer/give-access` do the same for agents. A site that cannot reach its own address from the server (some Docker setups) points the request somewhere that works with `role_right_sizer_probe_fetch_url` and `role_right_sizer_probe_request_args`.
 
 ## How usage is recorded
 
@@ -41,6 +60,7 @@ Everything is collected in memory during a request and written once, on `shutdow
 | Admin screens | The capability the screen's menu entry needs, looked up in `$menu` and `$submenu` the way `user_can_access_admin_page()` does |
 | REST API | Requests that change something (not `GET`, `HEAD` or `OPTIONS`) and succeed: every capability check that passed while the route's permission callback ran. Checks made while the response is built, such as which buttons the editor may show, are left out |
 | Abilities | Every ability run, by name, on WordPress 6.9 and later |
+| Axle Elevate | Access lent for a time (a role from Axle Elevate) is detected from Elevate's stored active elevations (`axle_elevate_active` user meta, or its `Active` class when loaded). What a person did with a capability they only had through the loan is kept apart, shown as "N capabilities through Elevate", and never counts towards a recommendation. A lent role is not counted as an administrator by the last-administrator guard, and changing the permanent role keeps the lent one |
 | Logins and activity | The last login (network-wide) and the last logged-in request on the site, at most once an hour |
 
 The default hook map:
@@ -100,6 +120,17 @@ The report is built 100 users at a time. A build runs up to 20 batches in the re
 | `role_right_sizer_dormant_days` | filter | `( int $days )`. Days without activity before an account is dormant. Default 90 |
 | `role_right_sizer_dormant_action` | filter | `( string $action, WP_User $user )`. `remove` (no role on this site) or `fallback`. Anything else is `remove` |
 | `role_right_sizer_fallback_role` | filter | `( string $role, WP_User $user )`. The role dormant accounts move to. A role that does not exist means no role |
+| `role_right_sizer_reduce_roles` | filter | `( string[] $roles, WP_User $user )`. The roles an access review offers under Reduce to for a person. Only roles with fewer capabilities, all of them held now, survive whatever you return |
+| `role_right_sizer_temporary_access` | filter | `( array $entries, int $user_id )`. Access lent for a time: entries with `kind` (`role`, `bundle`, `super_admin`), `role` and `expires`. Default Axle Elevate's active elevations. Lent roles do not count as administrator and their use is kept apart |
+| `role_right_sizer_trial_wall_data` | filter | `( array $data, array\|null $trial )`. The `axle_wall` data of a refused REST request: `plugin`, `capability`, `message`, `action_label`, `request_route` |
+| `role_right_sizer_can_probe` | filter | `( bool $allowed, int $user_id )`. Whether the current user may run "Why can't they?" for a person. Default whether they may edit the person. WP-CLI always may |
+| `role_right_sizer_probe_ttl` | filter | `( int $seconds )`. How long the one-request cookie and session live. Default 120, 30 to 300 |
+| `role_right_sizer_probe_blocked_screens` | filter | `( string[] $files )`. Admin files that cannot be loaded as another person |
+| `role_right_sizer_probe_presets` | filter | `( array $presets )`. The quick picks on the check form: `kind`, `target`, `method`, `label` |
+| `role_right_sizer_probe_fetch_url` | filter | `( string $url, string $kind )`. Where the request goes, for a site that cannot reach its own address |
+| `role_right_sizer_probe_request_args` | filter | `( array $args, string $kind )`. Arguments of that request, such as a Host header. The cookies cannot be changed |
+| `role_right_sizer_fix_roles` | filter | `( string[] $roles )`. The roles "Why can't they?" offers to give. Roles the current user does not fully hold are dropped from the result whatever it holds |
+| `role_right_sizer_probe_run` | action | `( array $result, int $user_id )`. A check ran: `verdict`, `status`, `cap`, `failed`, `about` |
 | `role_right_sizer_candidate_roles` | filter | `( string[] $roles, WP_User $user )`. Roles that may be recommended for a user. Default every role |
 | `role_right_sizer_excluded_users` | filter | `( int[] $user_ids )`. Users never to touch. Default the list on the settings screen |
 | `role_right_sizer_excluded_roles` | filter | `( string[] $roles )`. Roles never to touch: their users keep them, and the role keeps its capabilities |
@@ -208,6 +239,8 @@ On WordPress 6.9 and later, Role Right-Sizer registers [abilities](https://devel
 | `role-right-sizer/list-trials` | Read-only. Trials, optionally only `open` (active or over and waiting), `active`, `ended`, `kept` or `restored`: who, days left, the roles, whether they asked for access back, and every denial with its count |
 | `role-right-sizer/list-reviews` | Read-only. Access reviews, optionally only `open` or `finished`: name, dates, how many accounts and how many Keep, Reduce and Remove decisions, and the change log batch |
 | `role-right-sizer/export-review` | Read-only. The evidence of `review_id` as `csv` (default) or `html`. Accounts you may not edit are left out. Agents cannot start, decide or finish a review |
+| `role-right-sizer/check-access` | Read-only. For `user_id` and a `screen` or a `route` (and `method` for routes): `verdict`, `status`, the refusing `capability`, `roles_with`, `failed_checks` and the `fixes`. A REST write is checked and stopped, so nothing is saved |
+| `role-right-sizer/give-access` | Not destructive, so the REST API runs it with `POST`. Gives `user_id` one `capability`, or one more `role`. Returns the logged change; `undo-change` takes it away. Refused (400) for your own account, a capability or role you may not give, the exclude list and people on a trial |
 | `role-right-sizer/start-trial` | Destructive. Gives `user_id` their recommended smaller role for `days` (default 14) and returns the trial. Refused (400) for your own account, the last administrator, the exclude list and accounts that are not in use |
 | `role-right-sizer/restore-trial` | Destructive. Gives the person their old role back and closes the trial |
 | `role-right-sizer/extend-trial` | Adds `days` to a trial, counted from now when its time is up |
@@ -240,6 +273,8 @@ wp role-right-sizer review keep-rest <review-id>
 wp role-right-sizer review finish <review-id> [--yes]
 wp role-right-sizer review discard <review-id> [--yes]
 wp role-right-sizer review export <review-id> [--format=csv|html] [--file=<path>]
+wp role-right-sizer access check <user> (--screen=<screen> | --route=<route> [--method=<method>]) [--format=text|json]
+wp role-right-sizer access fix <user> (--cap=<capability> | --role=<role>) [--dry-run] [--yes]
 ```
 
 `report` builds the recommendations first unless `--cached` is given. `--all-users` lists every user in the columns of the CSV download. `report` lists unused capabilities with their `owner` and `owner_active`. `apply --all` applies every user and role recommendation as one batch, except capabilities that belong to an active plugin, post type or taxonomy; it names those and leaves them alone unless you add `--include-plugin-caps`. Users can be IDs, usernames or email addresses. WP-CLI runs without a logged-in user unless you pass `--user`, so the "not your own account" rule only applies with `--user`. The last administrator rule always applies.
@@ -265,6 +300,7 @@ $plugin->applier()->undo_batch( $batch );
 | Where | Contents |
 | --- | --- |
 | `{prefix}role_right_sizer_usage` user option | Capabilities used: `cap => [ first_used, last_used, count ]`. `count` is how many times it was written, at most once an hour |
+| `{prefix}role_right_sizer_elevated_usage` user option | Capabilities used only through access lent for a time (Axle Elevate), in the same shape. Never counted towards a recommendation |
 | `{prefix}role_right_sizer_abilities` user option | Abilities run, in the same shape |
 | `{prefix}role_right_sizer_last_active` user option | The last logged-in request on the site |
 | `role_right_sizer_last_login` user meta | The last login, network-wide |
@@ -278,11 +314,11 @@ $plugin->applier()->undo_batch( $batch );
 | `role_right_sizer_steps_dismissed` user meta | Set when someone dismisses the Get started card |
 | `role_right_sizer_capability_history` option | When each role gained each capability, and the plugin folder that added it when known: `role => [ cap => [ first_seen, folder ] ]`. Updated when the roles change and on every report build. Not autoloaded |
 
-`{prefix}` is the site's table prefix, such as `wp_` or `wp_2_`. Access reminders run on the daily event. The cron events are `role_right_sizer_daily`, `role_right_sizer_build` and, while a trial is open, `role_right_sizer_trial_check` (hourly). Deactivating stops them. Uninstalling removes all of the above on every site of a network. Roles and capabilities stay as they are: applied changes are not undone.
+`{prefix}` is the site's table prefix, such as `wp_` or `wp_2_`. Access reminders run on the daily event. The cron events are `role_right_sizer_daily`, `role_right_sizer_build` and, while a trial is open, `role_right_sizer_trial_check` (hourly). Deactivating stops them. A "Why can't they?" check keeps short-lived transients (`role_right_sizer_probe_*`: a one-use marker for two minutes, what the request saw for two minutes, and the finished result for ten) and creates one session token that is destroyed right after the request. Uninstalling removes all of the above on every site of a network. Roles and capabilities stay as they are: applied changes are not undone.
 
 ## Privacy
 
-The usage record, the change log, the trials and the access reviews are personal data: when someone was active, what they did, and what they could not do during a trial. They take part in **Tools > Export Personal Data** and **Tools > Erase Personal Data**. Erasing deletes the usage record, the changes to that person's account and their trials, and keeps changes and trials they started without their name. In access reviews the person's entry loses its name, login, roles, activity and note but keeps the decision, so the counts in the evidence still add up, and their name goes from every decision they made. Closed trials are removed after a year (`role_right_sizer_trial_retention_days`). **Settings > Privacy** gets suggested text.
+The usage record, the change log, the trials and the access reviews are personal data: when someone was active, what they did, and what they could not do during a trial. The capabilities someone used through lent access are kept apart and count the same way. They take part in **Tools > Export Personal Data** and **Tools > Erase Personal Data**. Erasing deletes the usage record, the changes to that person's account and their trials, and keeps changes and trials they started without their name. In access reviews the person's entry loses its name, login, roles, activity and note but keeps the decision, so the counts in the evidence still add up, and their name goes from every decision they made. Closed trials are removed after a year (`role_right_sizer_trial_retention_days`). **Settings > Privacy** gets suggested text.
 
 ## Multisite
 
@@ -293,3 +329,5 @@ Roles are per site, so usage, recommendations and the change log are too. Super 
 - Hooks only see what WordPress or a plugin does through them. A plugin screen whose saves fire no mapped hook and go through `admin-post.php` or admin-ajax is counted only by the screen visit. Add its hook to the map.
 - A capability used less often than the window (a yearly export) looks unused. Widen the window or exclude the account.
 - Capability checks in REST callbacks after the permission check are not recorded, on purpose. A route that checks permissions inside its callback instead counts only through the mapped hooks.
+- "Why can't they?" can only tell what a screen or route does for one request. A rule that depends on the post, the time or the browser needs the real thing. A route that needs values before it checks permission (such as creating a user) stops at the missing values: check the admin screen that uses it.
+- A person lent two roles by Elevate, or access outside Axle Elevate that does not use its stored list, is only recognised when the `role_right_sizer_temporary_access` filter says so.

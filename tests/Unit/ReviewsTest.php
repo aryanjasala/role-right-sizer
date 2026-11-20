@@ -241,28 +241,42 @@ final class ReviewsTest extends PluginTestCase {
 		$this->assertSame( 'applied', $done['entries'][6]['result']['status'] );
 	}
 
-	public function test_a_role_that_gives_more_access_is_refused_when_it_is_applied(): void {
+	public function test_a_role_that_gives_more_access_is_refused_when_it_is_chosen(): void {
 		$reviews = $this->reviews();
 		$review  = $reviews->start();
-		$reviews->decide( $review['id'], 1, 'keep' );
-		$reviews->decide( $review['id'], 5, 'keep' );
-		$reviews->decide( $review['id'], 6, 'reduce', 'administrator' );
 
-		$done = $reviews->finish( $review['id'] );
-		$this->assertSame( 'failed', $done['entries'][6]['result']['status'] );
+		$refused = $reviews->decide( $review['id'], 6, 'reduce', 'administrator' );
+
+		$this->assertInstanceOf( \WP_Error::class, $refused );
+		$this->assertSame( 'role_right_sizer_more_access', $refused->get_error_code() );
+		$this->assertSame( '', $reviews->get( $review['id'] )['entries'][6]['decision'] );
 		$this->assertSame( array( 'editor' ), $this->users[6]->roles );
+	}
+
+	public function test_reduce_to_offers_only_smaller_roles_the_person_already_covers(): void {
+		$editor = Applier::smaller_roles( $this->users[6] );
+		$this->assertSame( array( 'subscriber', 'contributor', 'author' ), $editor );
+		$this->assertNotContains( 'editor', $editor, 'The role they have is not a smaller role.' );
+		$this->assertNotContains( 'administrator', $editor );
+		$offered = Applier::smaller_roles( $this->users[5] );
+
+		$this->assertNotContains( 'administrator', $offered );
+		$this->assertContains( 'editor', $offered );
+		$this->assertSame( $offered, array_values( array_intersect( $offered, array_keys( $this->roles ) ) ) );
+		foreach ( $offered as $role ) {
+			$this->assertSame( array(), array_diff( \AryanX\Axle\RoleRightSizer\Recommender::role_caps()[ $role ], \AryanX\Axle\RoleRightSizer\Temporary::permanent_caps( $this->users[5] ) ) );
+		}
 	}
 
 	public function test_the_plan_shows_what_finishing_would_take_away_and_what_would_be_skipped(): void {
 		$reviews = $this->reviews();
 		$review  = $reviews->start();
 		$reviews->decide( $review['id'], 5, 'reduce', 'editor' );
-		$reviews->decide( $review['id'], 6, 'reduce', 'administrator' );
+		$reviews->decide( $review['id'], 6, 'remove' );
 
 		$plan = $reviews->plan( $reviews->get( $review['id'] ) );
 		$this->assertSame( '', $plan[0]['problem'] );
 		$this->assertContains( 'manage_options', $plan[0]['lost'] );
-		$this->assertNotSame( '', $plan[1]['problem'] );
 		$this->assertSame( array( 'administrator' ), $this->users[5]->roles );
 	}
 

@@ -2,7 +2,7 @@
 // Run on demand: npm run screenshots
 const { test, expect, wp } = require( './utils' );
 const { prepareSite, shot } = require( './utils/media' );
-const { seed, clean, trialWithDenials, reviewInProgress } = require( './seed' );
+const { seed, clean, trialWithDenials, reviewInProgress, bridge, unbridge } = require( './seed' );
 
 const SCREEN = '/wp-admin/users.php?page=role-right-sizer';
 
@@ -74,5 +74,23 @@ test.describe.serial( 'Screenshots', () => {
 		await expect( page.locator( '.rrs-review-table' ) ).toBeVisible();
 		await page.setViewportSize( { width: 1280, height: 1300 } );
 		await shot( page, 6 );
+	} );
+
+	test( '7: why can\'t they', async ( { page } ) => {
+		seed();
+		wp( 'role-right-sizer', 'report' );
+		bridge();
+		try {
+			wp( 'user', 'create', 'jo', 'jo@example.com', '--role=subscriber', '--user_pass=password', '--display_name=Jo Park' );
+			const jo = wp( 'user', 'get', 'jo', '--field=ID' );
+			await page.goto( `${ SCREEN }&view=check&user=${ jo }&kind=rest&target=/wp/v2/media&method=POST` );
+			await page.getByRole( 'button', { name: 'Check what Jo Park can do' } ).click();
+			await expect( page.locator( '.rrs-check-fixes' ) ).toBeVisible();
+			await page.setViewportSize( { width: 1280, height: 1240 } );
+			await shot( page, 7 );
+		} finally {
+			wp( 'user', 'delete', 'jo', '--yes', '--reassign=1' );
+			unbridge();
+		}
 	} );
 } );

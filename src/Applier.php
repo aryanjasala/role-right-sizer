@@ -7,6 +7,8 @@
 
 namespace AryanX\Axle\RoleRightSizer;
 
+use AryanX\Axle\RoleRightSizer\Probe\Prober;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -79,7 +81,7 @@ final class Applier {
 		}
 
 		$keeps = '' === $proposed ? array() : (array) ( Recommender::role_caps()[ $proposed ] ?? array() );
-		if ( array_intersect( (array) $user->roles, Recommender::admin_roles() ) && ! in_array( 'manage_options', $keeps, true ) && Recommender::admin_count() <= 1 ) {
+		if ( array_intersect( Temporary::permanent_roles( $user ), Recommender::admin_roles() ) && ! in_array( 'manage_options', $keeps, true ) && Recommender::admin_count() <= 1 ) {
 			return new \WP_Error( 'role_right_sizer_last_admin', __( 'This is the last administrator, so the role stays.', 'role-right-sizer' ) );
 		}
 
@@ -126,13 +128,13 @@ final class Applier {
 			'kind'    => $recommendation['type'],
 			'user_id' => $user->ID,
 			'login'   => $user->user_login,
-			'before'  => array_values( (array) $user->roles ),
+			'before'  => Temporary::permanent_roles( $user ),
 			'after'   => '' === $recommendation['proposed'] ? array() : array( $recommendation['proposed'] ),
 			'lost'    => $recommendation['lost'],
 		);
 
 		$this->before_apply( $change, $user );
-		$user->set_role( $recommendation['proposed'] );
+		$this->assign( $user, $recommendation['proposed'] );
 
 		return $this->applied( $this->changes->add( $change ) );
 	}
@@ -164,13 +166,128 @@ final class Applier {
 			'kind'    => $kind,
 			'user_id' => $user->ID,
 			'login'   => $user->user_login,
-			'before'  => array_values( (array) $user->roles ),
+			'before'  => Temporary::permanent_roles( $user ),
 			'after'   => '' === $role ? array() : array( $role ),
 			'lost'    => $plan['lost'],
 		);
 
 		$this->before_apply( $change, $user );
-		$user->set_role( $role );
+		$this->assign( $user, $role );
+
+		return $this->applied( $this->changes->add( $change ) );
+	}
+
+	/**
+	 * The roles a user could be reduced to: only roles that grant fewer capabilities,
+	 * every one of them a capability the person has now.
+	 *
+	 * Access a role was lent for a time (Axle Elevate) does not count.
+	 *
+	 * @param \WP_User $user The user.
+	 * @return string[] Role names, smallest first.
+	 */
+	public static function smaller_roles( \WP_User $user ): array {
+		$roles = Recommender::role_caps();
+		$have  = Temporary::permanent_caps( $user );
+		$fits  = array();
+		foreach ( $roles as $name => $caps ) {
+			if ( ! array_diff( $caps, $have ) && array_diff( $have, $caps ) ) {
+				$fits[ $name ] = count( $caps );
+			}
+		}
+		asort( $fits );
+		$names = array_map( 'strval', array_keys( $fits ) );
+
+		/**
+		 * Filters the roles an access review offers under "Reduce to" for a person.
+		 *
+		 * Roles that would give the person a capability they do not have are dropped
+		 * from the result, whatever the filter returns.
+		 *
+		 * @param string[] $names Role names, smallest first. Only roles with fewer capabilities, all of them held now.
+		 * @param \WP_User $user  The person.
+		 */
+		$filtered = apply_filters( 'role_right_sizer_reduce_roles', $names, $user );
+
+		return array_values( array_intersect( Settings::strings( $filtered ), $names ) );
+	}
+
+	/**
+	 * Gives a person access they were refused, found by "Why can't they?": one capability, or one role on top of what they have.
+	 *
+	 * Nobody gets more than the person asking could give: a capability needs to be one the asker holds, and a role
+	 * one WordPress lets them assign. The change goes in the log, so Undo works.
+	 *
+	 * @param int    $user_id User ID.
+	 * @param string $type    `cap` or `role`.
+	 * @param string $value   The capability or the role.
+	 * @param int    $batch   Batch to add the change to, 0 to start one.
+	 * @return array|\WP_Error The change, or why it was refused.
+	 */
+	public function apply_fix( int $user_id, string $type, string $value, int $batch = 0 ) {
+		$user = get_userdata( $user_id );
+		if ( ! $user instanceof \WP_User ) {
+			return new \WP_Error( 'role_right_sizer_not_found', __( 'That user does not exist.', 'role-right-sizer' ) );
+		}
+
+		$current = get_current_user_id();
+		if ( $current && $current === $user->ID ) {
+			return new \WP_Error( 'role_right_sizer_self', __( 'You cannot change your own role here.', 'role-right-sizer' ) );
+		}
+		if ( in_array( $this->recommender->skip_reason( $user ), array( 'excluded', 'excluded_role', 'super_admin' ), true ) ) {
+			return new \WP_Error( 'role_right_sizer_excluded', __( 'This user is on the exclude list.', 'role-right-sizer' ) );
+		}
+		if ( $current && ! current_user_can( 'promote_user', $user->ID ) ) {
+			return new \WP_Error( 'role_right_sizer_forbidden', __( 'Sorry, you are not allowed to change this user\'s role.', 'role-right-sizer' ) );
+		}
+		if ( (int) get_user_option( Trials::FLAG, $user->ID ) ) {
+			return new \WP_Error( 'role_right_sizer_trial_exists', __( 'On a role trial, so the role is left alone. Decide on the trial first.', 'role-right-sizer' ) );
+		}
+
+		$before = Temporary::permanent_roles( $user );
+		$change = array(
+			'batch'   => $batch,
+			'by'      => $current,
+			'user_id' => $user->ID,
+			'login'   => $user->user_login,
+			'before'  => $before,
+			'lost'    => array(),
+		);
+
+		if ( 'cap' === $type ) {
+			if ( ! Prober::may_hand_out_cap( $value ) ) {
+				return new \WP_Error( 'role_right_sizer_fix_cap', __( 'You can only give a capability you have yourself.', 'role-right-sizer' ) );
+			}
+			if ( in_array( $value, Temporary::permanent_caps( $user ), true ) ) {
+				return new \WP_Error( 'role_right_sizer_nothing', __( 'There is nothing to change for this user.', 'role-right-sizer' ) );
+			}
+			$change['kind']   = 'fix_cap';
+			$change['after']  = $before;
+			$change['cap']    = $value;
+			$change['gained'] = array( $value );
+
+			$this->before_apply( $change, $user );
+			$user->add_cap( $value, true );
+		} elseif ( 'role' === $type ) {
+			$roles = Recommender::role_caps();
+			if ( ! isset( $roles[ $value ] ) ) {
+				return new \WP_Error( 'role_right_sizer_role_unknown', __( 'That role does not exist.', 'role-right-sizer' ) );
+			}
+			if ( ! in_array( $value, Prober::editable_roles(), true ) ) {
+				return new \WP_Error( 'role_right_sizer_fix_role', __( 'You are not allowed to give that role.', 'role-right-sizer' ) );
+			}
+			if ( in_array( $value, $before, true ) ) {
+				return new \WP_Error( 'role_right_sizer_nothing', __( 'There is nothing to change for this user.', 'role-right-sizer' ) );
+			}
+			$change['kind']   = 'fix_role';
+			$change['after']  = array_merge( $before, array( $value ) );
+			$change['gained'] = array_values( array_diff( $roles[ $value ], Temporary::permanent_caps( $user ) ) );
+
+			$this->before_apply( $change, $user );
+			$user->add_role( $value );
+		} else {
+			return new \WP_Error( 'role_right_sizer_fix_type', __( 'Choose to give one capability or one role.', 'role-right-sizer' ) );
+		}
 
 		return $this->applied( $this->changes->add( $change ) );
 	}
@@ -198,7 +315,7 @@ final class Applier {
 			return $refused;
 		}
 
-		$current = array_values( array_intersect( array_map( 'strval', (array) $user->roles ), array_keys( $roles ) ) );
+		$current = array_values( array_intersect( Temporary::permanent_roles( $user ), array_keys( $roles ) ) );
 		$have    = array();
 		foreach ( $current as $name ) {
 			$have = array_merge( $have, $roles[ $name ] );
@@ -327,7 +444,17 @@ final class Applier {
 			return new \WP_Error( 'role_right_sizer_undone', __( 'That change was already undone.', 'role-right-sizer' ) );
 		}
 
-		if ( 'unused_cap' === $change['kind'] ) {
+		if ( 'fix_cap' === $change['kind'] ) {
+			$user = get_userdata( (int) $change['user_id'] );
+			if ( ! $user instanceof \WP_User ) {
+				return new \WP_Error( 'role_right_sizer_gone', __( 'That user no longer exists.', 'role-right-sizer' ) );
+			}
+			$current = get_current_user_id();
+			if ( $current && ( $current === $user->ID || ! current_user_can( 'promote_user', $user->ID ) ) ) {
+				return new \WP_Error( 'role_right_sizer_forbidden', __( 'Sorry, you are not allowed to change this user\'s role.', 'role-right-sizer' ) );
+			}
+			$user->remove_cap( (string) $change['cap'] );
+		} elseif ( 'unused_cap' === $change['kind'] ) {
 			$role = get_role( (string) $change['role'] );
 			if ( ! $role ) {
 				return new \WP_Error( 'role_right_sizer_gone', __( 'That role no longer exists.', 'role-right-sizer' ) );
@@ -344,7 +471,7 @@ final class Applier {
 			}
 
 			$before = array_values( array_map( 'strval', (array) $change['before'] ) );
-			$user->set_role( $before[0] ?? '' );
+			$this->assign( $user, $before[0] ?? '' );
 			foreach ( array_slice( $before, 1 ) as $role ) {
 				$user->add_role( $role );
 			}
@@ -396,6 +523,20 @@ final class Applier {
 			'undone' => $undone,
 			'errors' => $errors,
 		);
+	}
+
+	/**
+	 * Sets a person's permanent role and keeps any role Axle Elevate lent them for now.
+	 *
+	 * @param \WP_User $user The user.
+	 * @param string   $role  Role to give, '' for none.
+	 */
+	private function assign( \WP_User $user, string $role ): void {
+		$lent = Temporary::roles( $user->ID );
+		$user->set_role( $role );
+		foreach ( $lent as $name ) {
+			$user->add_role( $name );
+		}
 	}
 
 	/**

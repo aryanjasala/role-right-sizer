@@ -311,6 +311,16 @@ final class Settings {
 	}
 
 	/**
+	 * A filtered value as an array, or null when it is not one.
+	 *
+	 * @param mixed $value Filtered value.
+	 * @return array|null
+	 */
+	public static function maybe_array( $value ): ?array {
+		return is_array( $value ) ? $value : null;
+	}
+
+	/**
 	 * A filtered list, as unique non-empty strings.
 	 *
 	 * @param mixed $value Filtered value.

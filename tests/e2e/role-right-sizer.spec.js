@@ -1,10 +1,20 @@
-const { test, expect, wp, wpEval, logInAs } = require( './utils' );
+const { test, expect, wp, wpEval, logInAs, openEditor } = require( './utils' );
+const { bridge, unbridge } = require( './seed' );
 
 const SCREEN = '/wp-admin/users.php?page=role-right-sizer';
 const OPTIONS = [ 'role_right_sizer_settings', 'role_right_sizer_report', 'role_right_sizer_changes', 'role_right_sizer_capability_history', 'role_right_sizer_trials', 'role_right_sizer_reviews' ];
 // Capabilities the tests put on core roles, taken off again in reset().
 const TEST_CAPS = [ [ 'administrator', 'rrs_e2e_approve' ] ];
 const LOGINS = [ 'pat', 'sam', 'olive', 'gus', 'casey', 'jo' ];
+
+/** Runs WP-CLI and returns what it printed, whether it succeeded or not. */
+const wpTry = ( ...args ) => {
+	try {
+		return wp( ...args );
+	} catch ( error ) {
+		return String( error.stderr || error.stdout || error.message );
+	}
+};
 
 const json = ( php ) => JSON.parse( wpEval( `echo wp_json_encode( ${ php } );` ) );
 const userId = ( login ) => Number( wp( 'user', 'get', login, '--field=ID' ) );
@@ -461,11 +471,13 @@ test.describe( 'Role Right-Sizer', () => {
 		expect( listed.status ).toBe( 200 );
 		expect( listed.body.map( ( ability ) => ability.name ).sort() ).toEqual( [
 			'role-right-sizer/apply-recommendation',
+			'role-right-sizer/check-access',
 			'role-right-sizer/export-review',
 			'role-right-sizer/extend-trial',
 			'role-right-sizer/get-changes',
 			'role-right-sizer/get-recommendations',
 			'role-right-sizer/get-user-usage',
+			'role-right-sizer/give-access',
 			'role-right-sizer/keep-trial',
 			'role-right-sizer/list-reviews',
 			'role-right-sizer/list-trials',
@@ -709,6 +721,13 @@ test.describe( 'Role Right-Sizer', () => {
 		const html = await report.text();
 		expect( html ).toContain( '<h1>Access review: Q4 access review</h1>' );
 		expect( html ).toContain( 'Reduce to Editor' );
+		// On a phone the page does not scroll sideways: the table scrolls inside its own region.
+		await page.setViewportSize( { width: 390, height: 800 } );
+		await page.goto( await page.getByRole( 'link', { name: 'Open printable report' } ).getAttribute( 'href' ) );
+		expect( await page.evaluate( () => document.documentElement.scrollWidth - document.documentElement.clientWidth ) ).toBeLessThanOrEqual( 1 );
+		expect( await page.locator( '.scroll' ).evaluate( ( element ) => element.scrollWidth > element.clientWidth ) ).toBe( true );
+		await page.setViewportSize( { width: 1440, height: 900 } );
+		await page.goBack();
 		expect( ( await request.get( '/wp-admin/admin-post.php?action=role_right_sizer&task=review_csv&review=1' ) ).status() ).not.toBe( 200 );
 
 		// Finished means finished: it cannot be discarded, and Undo gives the role back.
@@ -746,6 +765,218 @@ test.describe( 'Role Right-Sizer', () => {
 		wp( 'role-right-sizer', 'settings', '--review-interval=365' );
 		expect( JSON.parse( wp( 'role-right-sizer', 'settings', '--format=json' ) ).find( ( row ) => row.setting === 'review_interval' ).value ).toBe( '365' );
 		wp( 'role-right-sizer', 'settings', '--review-interval=90' );
+	} );
+
+	test( 'Reduce to offers only smaller roles the person already covers, and the server refuses the rest', async ( { page } ) => {
+		createUser( 'pat', 'administrator' );
+		createUser( 'olive', 'editor' );
+		createUser( 'gus', 'author' );
+		trackingStarted( 120 );
+		wp( 'role-right-sizer', 'report' );
+
+		await page.goto( `${ SCREEN }&tab=reviews` );
+		await page.getByLabel( 'Name' ).fill( 'Roles check' );
+		await page.getByRole( 'button', { name: 'Start review' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Review started.' );
+
+		const options = ( login ) => page.locator( `tr[data-user="${ login }"] select[name$="[role]"] option` ).allTextContents();
+		const gus = await options( 'gus' );
+		expect( gus ).toEqual( [ 'Choose a role', 'Subscriber', 'Contributor' ] );
+		const olive = await options( 'olive' );
+		expect( olive ).toEqual( [ 'Choose a role', 'Subscriber', 'Contributor', 'Author' ] );
+		const pat = await options( 'pat' );
+		expect( pat ).toContain( 'Editor' );
+		expect( pat ).not.toContain( 'Administrator' );
+		// Nothing is preselected unless it is the recommendation, so a click on Save cannot reduce to the wrong role.
+		await expect( page.locator( 'tr[data-user="gus"] select[name$="[role]"]' ) ).toHaveValue( '' );
+
+		// A role that is not smaller never gets into a review, from WP-CLI either.
+		const refused = wpTry( 'role-right-sizer', 'review', 'decide', '1', 'gus', 'reduce', '--role=administrator' );
+		expect( refused ).toContain( 'more access' );
+		const sideways = wpTry( 'role-right-sizer', 'review', 'decide', '1', 'gus', 'reduce', '--role=author' );
+		expect( sideways ).toContain( 'more access' );
+		wp( 'role-right-sizer', 'review', 'decide', '1', 'gus', 'reduce', '--role=contributor' );
+	} );
+
+	test( 'someone elevated for an hour is not an administrator, and what they do with it is not their normal use', async ( { browser } ) => {
+		createUser( 'pat', 'editor' );
+		backdate( 'pat' );
+		trackingStarted( 120 );
+		// What Axle Elevate stores while a role is lent (Elevate itself is not installed here).
+		wpEval( `
+			$user = get_user_by( 'login', 'pat' );
+			$user->add_role( 'administrator' );
+			update_user_meta( $user->ID, 'axle_elevate_active', array( array( 'id' => 7, 'kind' => 'role', 'role' => 'administrator', 'blog' => get_current_blog_id(), 'expires' => time() + 3600 ) ) );
+		` );
+		expect( json( 'AryanX\\Axle\\RoleRightSizer\\Recommender::admin_count()' ) ).toBe( 1 );
+		expect( json( 'AryanX\\Axle\\RoleRightSizer\\Temporary::roles( ' + userId( 'pat' ) + ' )' ) ).toEqual( [ 'administrator' ] );
+
+		const pat = await loginAs( browser, 'pat' );
+		await pat.page.goto( '/wp-admin/plugins.php' );
+		await expect( pat.page.locator( '.wp-heading-inline' ) ).toContainText( 'Plugins' );
+		await pat.page.goto( '/wp-admin/edit.php' );
+		await pat.context.close();
+
+		const used = Object.keys( usage( 'pat' ) );
+		expect( used ).not.toContain( 'activate_plugins' );
+		expect( Object.keys( json( `get_user_option( 'role_right_sizer_elevated_usage', ${ userId( 'pat' ) } )` ) || {} ) ).toContain( 'activate_plugins' );
+
+		// The Users screen says so, and the recommendation looks at the editor role only.
+		wp( 'role-right-sizer', 'report' );
+		const row = userRows( JSON.parse( wp( 'role-right-sizer', 'report', '--format=json' ) ) ).find( ( item ) => item.user === 'pat' );
+		expect( row ).toBeUndefined();
+
+		// Changing the permanent role keeps the lent one.
+		wp( 'role-right-sizer', 'access', 'fix', 'pat', '--role=author', '--yes' );
+		expect( roles( 'pat' ) ).toContain( 'administrator' );
+		wp( 'role-right-sizer', 'undo', String( JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) )[ 0 ].id ) );
+		expect( roles( 'pat' ) ).toContain( 'administrator' );
+		expect( roles( 'pat' ) ).toContain( 'editor' );
+	} );
+
+	test( 'a person on trial who is refused in the block editor can ask for access back right there, and comes back to where they were', async ( { browser, page } ) => {
+		await patWorksLikeAnEditor( browser );
+		trackingStarted( 120 );
+		backdate( 'sam' );
+		wp( 'role-right-sizer', 'report' );
+		wp( 'role-right-sizer', 'trial', 'start', 'pat' );
+		const post = Number( wp( 'post', 'create', '--post_title=Pat on pastry', '--post_status=draft', `--post_author=${ userId( 'pat' ) }`, '--porcelain' ) );
+		const requested = () => Number( wpEval( "$log = get_option( 'role_right_sizer_trials' ); echo (int) $log['items'][0]['requested'];" ) );
+
+		const pat = await loginAs( browser, 'pat' );
+		await openEditor( pat.page, post );
+		const refusal = await pat.page.evaluate( async () => {
+			try {
+				await window.wp.apiFetch( { path: '/wp/v2/users', method: 'POST', data: { username: 'rrs_new', email: 'rrs_new@example.com', password: 'Passw0rd!x1y2' } } );
+				return null;
+			} catch ( error ) {
+				return error.data && error.data.axle_wall;
+			}
+		} );
+		expect( refusal ).toMatchObject( { plugin: 'role-right-sizer', capability: 'create_users', action_label: 'Request my access back', request_route: 'role-right-sizer/v1/trial/request-access' } );
+		const notice = pat.page.locator( '.components-notice', { hasText: 'Your access was reduced' } );
+		await expect( notice ).toBeVisible();
+		expect( requested() ).toBe( 0 );
+		await notice.getByRole( 'button', { name: 'Request my access back' } ).click();
+		await expect( pat.page.locator( '.components-snackbar', { hasText: 'Your request was sent' } ) ).toBeVisible();
+		expect( requested() ).toBeGreaterThan( 0 );
+		await pat.context.close();
+
+		// The die page says when the trial ends, and sending the request returns to the screen they were on.
+		wpEval( "$log = get_option( 'role_right_sizer_trials' ); $log['items'][0]['requested'] = 0; update_option( 'role_right_sizer_trials', $log, false );" );
+		const again = await loginAs( browser, 'pat' );
+		await again.page.goto( '/wp-admin/edit.php' );
+		// A navigation from a page sends the Referer, like a click on a link does.
+		await again.page.evaluate( () => {
+			window.location.href = '/wp-admin/plugins.php';
+		} );
+		const wall = again.page.locator( '.role-right-sizer-wall' );
+		await expect( wall ).toContainText( 'Your trial ends on' );
+		await expect( wall.getByRole( 'link', { name: 'Back' } ) ).toHaveAttribute( 'href', /wp-admin\/edit\.php/ );
+		await wall.getByRole( 'button', { name: 'Request my access back' } ).click();
+		await expect( again.page ).toHaveURL( /wp-admin\/edit\.php/ );
+		await expect( again.page.locator( '.notice-success' ) ).toContainText( 'Your request was sent' );
+		await again.context.close();
+		void page;
+	} );
+
+	test( 'Why can\'t they? runs a request as the person without signing in as them, names the capability, and fixes it with Undo', async ( { browser, page } ) => {
+		bridge();
+		try {
+			createUser( 'jo', 'subscriber' );
+			createUser( 'olive', 'editor' );
+			const before = { posts: wp( 'post', 'list', '--post_type=any', '--format=count' ), media: wp( 'post', 'list', '--post_type=attachment', '--format=count' ) };
+
+			// A link on the Users list and on the profile.
+			await page.goto( '/wp-admin/users.php' );
+			await expect( page.locator( 'tr', { hasText: 'jo@example.com' } ).getByRole( 'link', { name: 'Check what Jo can do' } ) ).toHaveCount( 1 );
+			await page.goto( `/wp-admin/user-edit.php?user_id=${ userId( 'jo' ) }` );
+			await page.getByRole( 'link', { name: 'Check what Jo can do' } ).click();
+			await expect( page.getByRole( 'heading', { name: /Why can.t Jo do it/ } ) ).toBeVisible();
+
+			// Jo cannot upload an image: a REST write is checked and stopped.
+			await page.getByRole( 'link', { name: 'Upload an image' } ).click();
+			await expect( page.locator( '#rrs-check-target' ) ).toHaveValue( '/wp/v2/media' );
+			await page.getByRole( 'button', { name: 'Check what Jo can do' } ).click();
+			const result = page.locator( '.rrs-check-result' );
+			await expect( result ).toContainText( 'Refused' );
+			await expect( result.locator( '.rrs-check-says code' ) ).toHaveText( 'upload_files' );
+			await expect( result.locator( '.rrs-check-roles' ) ).toContainText( 'Roles that have upload_files: Author, Editor, Administrator' );
+			await expect( result.locator( '.rrs-check-roles' ) ).toContainText( 'Jo has: Subscriber' );
+
+			// Nothing was created or logged in: no session is left behind and no media was added.
+			expect( wp( 'post', 'list', '--post_type=attachment', '--format=count' ) ).toBe( before.media );
+			expect( json( `count( WP_Session_Tokens::get_instance( ${ userId( 'jo' ) } )->get_all() )` ) ).toBe( 0 );
+
+			// The smallest fix is the capability alone, behind a confirmation, and it is in the change log.
+			await result.locator( 'summary', { hasText: 'Give only upload_files to Jo' } ).click();
+			await expect( result.locator( '.axle-confirm' ).first() ).toContainText( 'upload_files capability and nothing else' );
+			await result.getByRole( 'button', { name: 'Give this access' } ).click();
+			await expect( page.locator( '.notice-success' ) ).toContainText( 'Gave the access.' );
+			expect( json( `user_can( ${ userId( 'jo' ) }, 'upload_files' )` ) ).toBe( true );
+			expect( roles( 'jo' ) ).toBe( 'subscriber' );
+			const logged = JSON.parse( wp( 'role-right-sizer', 'changes', '--format=json' ) )[ 0 ];
+			expect( logged ).toMatchObject( { kind: 'fix_cap', target: 'jo', after: '+upload_files' } );
+
+			// Check again: allowed. Then Undo from the log takes it away.
+			await page.goto( `${ SCREEN }&view=check&user=${ userId( 'jo' ) }&kind=rest&target=/wp/v2/media&method=POST` );
+			await page.getByRole( 'button', { name: 'Check what Jo can do' } ).click();
+			await expect( page.locator( '.rrs-check-result' ) ).toContainText( 'Allowed' );
+			expect( wp( 'post', 'list', '--post_type=attachment', '--format=count' ) ).toBe( before.media );
+			wp( 'role-right-sizer', 'undo', String( logged.id ) );
+			expect( json( `user_can( ${ userId( 'jo' ) }, 'upload_files' )` ) ).toBe( false );
+
+			// A screen, a write that would be allowed (and still saves nothing), and a route that needs values.
+			const check = ( ...args ) => JSON.parse( wp( 'role-right-sizer', 'access', 'check', ...args, '--format=json' ) );
+			expect( check( 'olive', '--screen=plugins.php' ) ).toMatchObject( { verdict: 'refused', cap: 'activate_plugins' } );
+			expect( check( 'olive', '--screen=edit.php' ) ).toMatchObject( { verdict: 'allowed' } );
+			expect( check( 'olive', '--route=/wp/v2/posts', '--method=POST' ) ).toMatchObject( { verdict: 'allowed' } );
+			expect( wp( 'post', 'list', '--post_type=any', '--format=count' ) ).toBe( before.posts );
+			expect( check( 'jo', '--route=/wp/v2/media', '--method=POST' ).fixes.map( ( fix ) => fix.type ) ).toEqual( [ 'cap', 'role' ] );
+
+			// Only this site's admin screens and REST routes can be named.
+			expect( wpTry( 'role-right-sizer', 'access', 'check', 'jo', '--screen=https://example.org/wp-admin/upload.php' ) ).toContain( 'admin screen of this site' );
+			expect( wpTry( 'role-right-sizer', 'access', 'check', 'jo', '--screen=admin-ajax.php?action=heartbeat' ) ).toContain( 'acts on a plain request' );
+			expect( wpTry( 'role-right-sizer', 'access', 'check', 'jo', '--route=https://example.org/wp-json/wp/v2/media' ) ).toContain( 'REST route of this site' );
+		} finally {
+			unbridge();
+		}
+	} );
+
+	test( 'Why can\'t they? is for people who may edit that person, and a fix never gives more than the asker may give', async ( { browser } ) => {
+		bridge();
+		try {
+			createUser( 'jo', 'subscriber' );
+			createUser( 'olive', 'editor' );
+			wp( 'cap', 'add', 'editor', 'promote_users', 'edit_users', 'list_users' );
+			try {
+				// An editor with user-editing rights may check Jo, but cannot hand out what they do not have.
+				const olive = await loginAs( browser, 'olive' );
+				await olive.page.goto( `${ SCREEN }&view=check&user=${ userId( 'jo' ) }&kind=screen&target=plugins.php` );
+				await olive.page.getByRole( 'button', { name: 'Check what Jo can do' } ).click();
+				await expect( olive.page.locator( '.rrs-check-result' ) ).toContainText( 'activate_plugins' );
+				await expect( olive.page.locator( '.rrs-check-result' ) ).toContainText( 'You cannot give this access yourself' );
+				// The same request, forged, is refused by the server.
+				expect( wpEval( `wp_set_current_user( ${ userId( 'olive' ) } ); $r = ( new AryanX\\Axle\\RoleRightSizer\\Applier( new AryanX\\Axle\\RoleRightSizer\\Settings(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->recommender(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->report(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->changes() ) )->apply_fix( ${ userId( 'jo' ) }, 'cap', 'activate_plugins' ); echo is_wp_error( $r ) ? $r->get_error_code() : 'given';` ) ).toBe( 'role_right_sizer_fix_cap' );
+				expect( wpEval( `wp_set_current_user( ${ userId( 'olive' ) } ); $r = ( new AryanX\\Axle\\RoleRightSizer\\Applier( new AryanX\\Axle\\RoleRightSizer\\Settings(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->recommender(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->report(), AryanX\\Axle\\RoleRightSizer\\Plugin::instance()->changes() ) )->apply_fix( ${ userId( 'jo' ) }, 'role', 'administrator' ); echo is_wp_error( $r ) ? $r->get_error_code() : 'given';` ) ).toBe( 'role_right_sizer_fix_role' );
+				// Without the right to edit users, the view and the link are gone, though they may still open Right-Sizer.
+				wp( 'cap', 'remove', 'editor', 'edit_users' );
+				await olive.page.goto( `${ SCREEN }&view=check&user=${ userId( 'jo' ) }` );
+				await expect( olive.page.locator( '.notice-error' ) ).toContainText( 'You may not check this person' );
+				await expect( olive.page.locator( '.rrs-check-form' ) ).toHaveCount( 0 );
+				await olive.context.close();
+			} finally {
+				wpTry( 'cap', 'remove', 'editor', 'promote_users', 'edit_users', 'list_users' );
+			}
+
+			// A subscriber cannot open the view at all.
+			const jo = await loginAs( browser, 'jo' );
+			const refused = await jo.page.goto( `${ SCREEN }&view=check&user=${ 1 }` );
+			expect( refused.status() ).toBe( 403 );
+			await jo.context.close();
+		} finally {
+			unbridge();
+		}
 	} );
 
 	test( 'a first visit gets a Get started card, a Help tab and a link in the plugin row', async ( { page } ) => {

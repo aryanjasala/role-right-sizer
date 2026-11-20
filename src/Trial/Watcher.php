@@ -28,7 +28,9 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Watcher implements Service {
 
-	public const ACTION = 'role_right_sizer_trial_request';
+	public const ACTION    = 'role_right_sizer_trial_request';
+	public const NAMESPACE = 'role-right-sizer/v1';
+	public const ROUTE     = 'trial/request-access';
 
 	/**
 	 * The trials.
@@ -88,6 +90,52 @@ final class Watcher implements Service {
 		add_action( 'init', array( $this, 'arm' ), 2 );
 		add_action( 'admin_post_' . self::ACTION, array( $this, 'handle_request' ) );
 		add_action( 'admin_notices', array( $this, 'notice' ) );
+		add_action( 'rest_api_init', array( $this, 'register_route' ) );
+	}
+
+	/**
+	 * Registers the route the wall's button posts to, from the block editor and from wp-admin.
+	 */
+	public function register_route(): void {
+		register_rest_route(
+			self::NAMESPACE,
+			'/' . self::ROUTE,
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'rest_request_access' ),
+				'permission_callback' => static function (): bool {
+					return is_user_logged_in();
+				},
+			)
+		);
+	}
+
+	/**
+	 * Asks for access back, for the person who is signed in. The route needs a REST nonce, so a link cannot trigger it.
+	 *
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function rest_request_access() {
+		$user_id = get_current_user_id();
+		$id      = $user_id ? (int) get_user_option( Trials::FLAG, $user_id ) : 0;
+		$trial   = $id ? $this->trials->get( $id ) : null;
+		if ( ! $trial || (int) $trial['user_id'] !== $user_id ) {
+			return new \WP_Error( 'role_right_sizer_no_trial', __( 'There is no trial on your account, so there is nothing to ask for.', 'role-right-sizer' ), array( 'status' => 404 ) );
+		}
+
+		$sent = $this->trials->request_access( $id, true );
+		if ( is_wp_error( $sent ) && 'role_right_sizer_trial_asked' !== $sent->get_error_code() ) {
+			$sent->add_data( array( 'status' => 409 ) );
+
+			return $sent;
+		}
+
+		return new \WP_REST_Response(
+			array(
+				'requested' => true === $sent,
+				'message'   => true === $sent ? __( 'Your request was sent. Whoever started the trial has been told.', 'role-right-sizer' ) : __( 'You already asked. Whoever started the trial has been told.', 'role-right-sizer' ),
+			)
+		);
 	}
 
 	/**
@@ -107,6 +155,7 @@ final class Watcher implements Service {
 
 		$this->trial = $trial;
 
+		add_action( 'admin_enqueue_scripts', array( AxleUi::class, 'enqueue_wall' ) );
 		add_filter( 'user_has_cap', array( $this, 'checked' ), PHP_INT_MAX, 4 );
 		add_action( 'admin_page_access_denied', array( $this, 'screen_denied' ) );
 		add_filter( 'wp_die_handler', array( $this, 'page_handler' ), PHP_INT_MAX );
@@ -273,6 +322,8 @@ final class Watcher implements Service {
 
 		if ( is_array( $data ) ) {
 			$data['role_right_sizer_trial'] = wp_strip_all_tags( $this->wall_text() );
+			$data['data']                   = is_array( $data['data'] ?? null ) ? $data['data'] : array();
+			$data['data']['axle_wall']      = $this->wall_data( $cap );
 			$response->set_data( $data );
 		}
 
@@ -290,7 +341,39 @@ final class Watcher implements Service {
 	}
 
 	/**
-	 * What the person sees on the die page: why they are stopped and a button to ask for access back.
+	 * The shared "ask at the wall" data for a refused REST request: what was refused and the one way forward.
+	 *
+	 * @param string $cap The capability that was missing, when known.
+	 * @return array<string, mixed>
+	 */
+	public function wall_data( string $cap = '' ): array {
+		$trial = $this->trial ? ( $this->trials->get( (int) $this->trial['id'] ) ?? $this->trial ) : null;
+		$asked = $trial && (int) $trial['requested'] > time() - DAY_IN_SECONDS;
+		$data  = array(
+			'plugin'     => 'role-right-sizer',
+			'capability' => $cap,
+			'message'    => wp_strip_all_tags( $this->wall_text() ),
+		);
+		if ( $asked ) {
+			$data['message'] = __( 'You already asked. Whoever started the trial has been told.', 'role-right-sizer' );
+		} else {
+			$data['action_label']  = __( 'Request my access back', 'role-right-sizer' );
+			$data['request_route'] = self::NAMESPACE . '/' . self::ROUTE;
+		}
+
+		/**
+		 * Filters the data a refused REST request carries so the editor can offer the way forward.
+		 *
+		 * @param array<string, mixed> $data  `plugin`, `capability`, `message`, and `action_label` with `request_route`.
+		 * @param array|null           $trial The trial.
+		 */
+		$filtered = Settings::maybe_array( apply_filters( 'role_right_sizer_trial_wall_data', $data, $trial ) );
+
+		return AxleUi::wall( $filtered ?? $data );
+	}
+
+	/**
+	 * What the person sees on the die page: why they are stopped, when the trial ends, a button to ask for access back and a way back.
 	 *
 	 * @return string HTML.
 	 */
@@ -300,15 +383,26 @@ final class Watcher implements Service {
 		}
 
 		$trial = $this->trials->get( (int) $this->trial['id'] ) ?? $this->trial;
-		$html  = '<div class="role-right-sizer-wall"><p>' . $this->wall_text( true ) . '</p>';
+		$html  = '<div class="role-right-sizer-wall">';
+		$html .= AxleUi::wall_html( array( 'message' => $this->wall_text( false ) ) );
 
+		if ( (int) $trial['ends'] > time() ) {
+			/* translators: %s: a date. */
+			$html .= '<p>' . esc_html( sprintf( __( 'Your trial ends on %s.', 'role-right-sizer' ), wp_date( (string) get_option( 'date_format' ), (int) $trial['ends'] ) ) ) . '</p>';
+		}
+
+		$back = wp_get_referer();
+		$back = is_string( $back ) && '' !== $back ? $back : admin_url();
 		if ( (int) $trial['requested'] > time() - DAY_IN_SECONDS ) {
 			$html .= '<p>' . esc_html__( 'You already asked. Whoever started the trial has been told.', 'role-right-sizer' ) . '</p>';
+			$html .= '<p><a class="button" href="' . esc_url( $back ) . '">' . esc_html__( 'Back', 'role-right-sizer' ) . '</a></p>';
 		} else {
 			$html .= '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 			$html .= wp_nonce_field( self::ACTION, '_wpnonce', true, false );
 			$html .= '<input type="hidden" name="action" value="' . esc_attr( self::ACTION ) . '">';
-			$html .= '<button type="submit" class="button button-primary">' . esc_html__( 'Request my access back', 'role-right-sizer' ) . '</button>';
+			$html .= '<input type="hidden" name="rrs_return" value="' . esc_url( $back ) . '">';
+			$html .= '<button type="submit" class="button button-primary">' . esc_html__( 'Request my access back', 'role-right-sizer' ) . '</button> ';
+			$html .= '<a class="button" href="' . esc_url( $back ) . '">' . esc_html__( 'Back', 'role-right-sizer' ) . '</a>';
 			$html .= '</form>';
 		}
 		$html .= '</div>';
@@ -323,7 +417,7 @@ final class Watcher implements Service {
 			Settings::text( apply_filters( 'role_right_sizer_trial_wall', $html, $trial ), $html ),
 			array(
 				'div'    => array( 'class' => true ),
-				'p'      => array(),
+				'p'      => array( 'class' => true ),
 				'time'   => array(
 					'class'    => true,
 					'datetime' => true,
@@ -344,7 +438,10 @@ final class Watcher implements Service {
 					'class' => true,
 				),
 				'strong' => array(),
-				'a'      => array( 'href' => true ),
+				'a'      => array(
+					'href'  => true,
+					'class' => true,
+				),
 			)
 		);
 	}
@@ -375,7 +472,7 @@ final class Watcher implements Service {
 	}
 
 	/**
-	 * The request button: tells whoever started the trial and sends the person back to the dashboard.
+	 * The request button: tells whoever started the trial and sends the person back to where they were.
 	 */
 	public function handle_request(): void {
 		check_admin_referer( self::ACTION );
@@ -390,7 +487,17 @@ final class Watcher implements Service {
 			$result = true === $sent ? 'requested' : 'asked';
 		}
 
-		wp_safe_redirect( add_query_arg( 'rrs_trial', $result, admin_url( 'index.php' ) ) );
+		// Back to the screen they came from, when WordPress can vouch for it.
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked above with check_admin_referer().
+		$back = isset( $_POST['rrs_return'] ) ? esc_url_raw( wp_unslash( (string) $_POST['rrs_return'] ) ) : '';
+		$back = '' !== $back ? wp_validate_redirect( $back, '' ) : '';
+		if ( '' === $back ) {
+			$referer = wp_get_referer();
+			$back    = is_string( $referer ) ? $referer : '';
+		}
+		$back = '' !== $back ? $back : admin_url( 'index.php' );
+
+		wp_safe_redirect( add_query_arg( 'rrs_trial', $result, $back ) );
 		exit;
 	}
 

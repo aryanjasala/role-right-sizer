@@ -17,6 +17,8 @@ if ( ! class_exists( 'WP_User' ) ) {
 		public $ID = 0;
 		/** @var string[] */
 		public $roles = array();
+		/** @var array<string, bool> */
+		public $caps = array();
 		/** @var string */
 		public $user_login = '';
 		/** @var string */

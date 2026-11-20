@@ -158,7 +158,10 @@ final class Recommender {
 	}
 
 	/**
-	 * How many users hold an administrator role, counting at most two.
+	 * How many users hold an administrator role for good, counting at most two.
+	 *
+	 * A role lent for a time by Axle Elevate does not count: the person it was
+	 * lent to is not an administrator the site can rely on.
 	 *
 	 * @return int 0, 1 or 2.
 	 */
@@ -168,15 +171,21 @@ final class Recommender {
 			return 0;
 		}
 
-		return count(
+		$count = 0;
+		foreach (
 			get_users(
 				array(
 					'role__in' => $roles,
-					'number'   => 2,
-					'fields'   => 'ID',
+					'number'   => 50,
 				)
-			)
-		);
+			) as $user
+		) {
+			if ( $user instanceof \WP_User && array_intersect( Temporary::permanent_roles( $user ), $roles ) ) {
+				++$count;
+			}
+		}
+
+		return min( 2, $count );
 	}
 
 	/**
@@ -189,13 +198,13 @@ final class Recommender {
 		if ( in_array( $user->ID, $this->settings->excluded_users(), true ) ) {
 			return 'excluded';
 		}
-		if ( array_intersect( (array) $user->roles, $this->settings->excluded_roles() ) ) {
+		if ( array_intersect( Temporary::permanent_roles( $user ), $this->settings->excluded_roles() ) ) {
 			return 'excluded_role';
 		}
 		if ( is_multisite() && is_super_admin( $user->ID ) ) {
 			return 'super_admin';
 		}
-		if ( ! $user->roles ) {
+		if ( ! Temporary::permanent_roles( $user ) ) {
 			return 'no_role';
 		}
 
@@ -217,7 +226,7 @@ final class Recommender {
 
 		$roles   = self::role_caps();
 		$ignored = $this->settings->ignored_capabilities();
-		$current = array_values( array_intersect( array_map( 'strval', (array) $user->roles ), array_keys( $roles ) ) );
+		$current = array_values( array_intersect( Temporary::permanent_roles( $user ), array_keys( $roles ) ) );
 		if ( ! $current ) {
 			return null;
 		}

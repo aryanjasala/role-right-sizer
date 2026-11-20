@@ -20,13 +20,17 @@ function role_right_sizer_uninstall_site(): void {
 		delete_option( $role_right_sizer_option );
 	}
 
+	// Short-lived markers and results of "Why can't they?" checks.
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall cleanup of transients with this plugin's own prefix.
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s", $wpdb->esc_like( '_transient_role_right_sizer_probe_' ) . '%', $wpdb->esc_like( '_transient_timeout_role_right_sizer_probe_' ) . '%' ) );
+
 	wp_clear_scheduled_hook( 'role_right_sizer_build' );
 	wp_clear_scheduled_hook( 'role_right_sizer_daily' );
 	wp_clear_scheduled_hook( 'role_right_sizer_trial_check' );
 
 	// Usage is kept per site, under this site's table prefix.
 	$role_right_sizer_prefix = $wpdb->get_blog_prefix();
-	foreach ( array( 'role_right_sizer_usage', 'role_right_sizer_abilities', 'role_right_sizer_last_active', 'role_right_sizer_trial' ) as $role_right_sizer_key ) {
+	foreach ( array( 'role_right_sizer_usage', 'role_right_sizer_elevated_usage', 'role_right_sizer_abilities', 'role_right_sizer_last_active', 'role_right_sizer_trial' ) as $role_right_sizer_key ) {
 		delete_metadata( 'user', 0, $role_right_sizer_prefix . $role_right_sizer_key, '', true );
 	}
 }
