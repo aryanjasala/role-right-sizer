@@ -243,7 +243,7 @@
 }
 
 .rrs-lent {
-	margin-top: 6px;
+	margin-top: 14px;
 }
 
 .rrs-lent .description {
@@ -257,4 +257,9 @@
 
 .rrs-page .axle-stat__value {
 	overflow-wrap: anywhere;
+}
+
+/* Hidden labels inside a scrolling table are positioned against the scroller, so they cannot widen the page. */
+.rrs-page .axle-scroll {
+	position: relative;
 }
